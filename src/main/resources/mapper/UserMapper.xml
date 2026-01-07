@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tongji.user.mapper.UserMapper">
+
+    <resultMap id="UserResultMap" type="com.tongji.user.domain.User">
+        <id column="id" property="id"/>
+        <result column="phone" property="phone"/>
+        <result column="email" property="email"/>
+        <result column="password_hash" property="passwordHash"/>
+        <result column="nickname" property="nickname"/>
+        <result column="avatar" property="avatar"/>
+        <result column="bio" property="bio"/>
+        <result column="zg_id" property="zgId"/>
+        <result column="gender" property="gender"/>
+        <result column="birthday" property="birthday"/>
+        <result column="school" property="school"/>
+        <result column="tags_json" property="tagsJson"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="findByPhone" parameterType="string" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        WHERE phone = #{phone}
+        LIMIT 1
+    </select>
+
+    <select id="findByEmail" parameterType="string" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        WHERE email = #{email}
+        LIMIT 1
+    </select>
+
+    <select id="existsByPhone" parameterType="string" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM users
+            WHERE phone = #{phone}
+        )
+    </select>
+
+    <select id="existsByEmail" parameterType="string" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM users
+            WHERE email = #{email}
+        )
+    </select>
+
+    <insert id="insert" parameterType="com.tongji.user.domain.User"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO users (
+            phone,
+            email,
+            password_hash,
+            nickname,
+            avatar,
+            bio,
+            zg_id,
+            gender,
+            birthday,
+            school,
+            tags_json,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{phone},
+            #{email},
+            #{passwordHash},
+            #{nickname},
+            #{avatar},
+            #{bio},
+            #{zgId},
+            #{gender},
+            #{birthday},
+            #{school},
+            #{tagsJson},
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <select id="findById" parameterType="long" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        WHERE id = #{id}
+    </select>
+
+    <update id="updatePassword">
+        UPDATE users
+        SET password_hash = #{passwordHash},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateProfile" parameterType="com.tongji.user.domain.User">
+        UPDATE users
+        <set>
+            <if test="nickname != null">nickname = #{nickname},</if>
+            <if test="bio != null">bio = #{bio},</if>
+            <if test="gender != null">gender = #{gender},</if>
+            <if test="birthday != null">birthday = #{birthday},</if>
+            <if test="zgId != null">zg_id = #{zgId},</if>
+            <if test="school != null">school = #{school},</if>
+            <if test="avatar != null">avatar = #{avatar},</if>
+            <if test="tagsJson != null">tags_json = #{tagsJson},</if>
+            updated_at = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+  <select id="existsByZgIdExceptId" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM users
+            WHERE zg_id = #{zgId}
+              AND id != #{excludeId}
+        )
+    </select>
+
+    <select id="listByIds" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+</mapper>
