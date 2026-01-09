@@ -1,5 +1,6 @@
 package com.tongji.llm.rag;
 
+import com.tongji.llm.cache.SemanticCacheService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
@@ -8,9 +9,12 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * RAG 问答查询服务：
@@ -26,11 +30,26 @@ public class RagQueryService {
     private final ChatClient chatClient;
     // 索引服务：确保帖子在问答前已建立/更新索引
     private final RagIndexService indexService;
+    // 语义缓存 + embedding
+    private final SemanticCacheService semanticCache;
+    private final EmbeddingService embeddingService;
 
     /**
      * 使用 WebFlux 返回回答内容的流。
      */
     public Flux<String> streamAnswerFlux(long postId, String question, int topK, int maxTokens) {
+        // 1) 语义缓存：先查 Redis（阈值严、扫描量小）
+        String namespace = "post:" + postId;
+        float[] qVec = SemanticCacheService.l2Normalize(embeddingService.embedQuery(question));
+        double threshold = 0.95;
+        int scanLimit = 200;          // 控延迟：只扫最近 200 条（可按压测调整）
+        long ttlSeconds = 7 * 24 * 3600; // 7 天
+
+        var hitOpt = semanticCache.getIfHit(namespace, qVec, threshold, scanLimit);
+        if (hitOpt.isPresent()) {
+            return Flux.just(hitOpt.get().answer());
+        }
+        // 2) 未命中：走原 RAG
         // 轻量保障：如索引不存在或指纹未变更则跳过，否则重建
         indexService.ensureIndexed(postId);
 
@@ -44,7 +63,7 @@ public class RagQueryService {
         // 用户消息：包含问题和召回到的上下文
         String user = "问题：" + question + "\n\n上下文如下（可能不完整）：\n" + context + "\n\n请基于以上上下文作答。";
 
-        return chatClient
+        Flux<String> stream = chatClient
                 .prompt() // 构建对话
                 .system(system)
                 .user(user)
@@ -54,7 +73,18 @@ public class RagQueryService {
                         .maxTokens(maxTokens)    // 控制最大输出长度
                         .build())
                 .stream()  // 以流式（SSE）返回模型输出
-                .content(); // 转换为 Flux<String>
+                .content();
+        // 3) 回写缓存：聚合完整答案后写入 Redis
+        String cacheId = UUID.randomUUID().toString();
+        Mono<Void> writeBack = stream
+                .collectList()
+                .timeout(Duration.ofSeconds(60))
+                .doOnNext(parts -> {
+                    String answer = String.join("", parts);
+                    semanticCache.put(namespace, cacheId, question, qVec, answer, ttlSeconds);
+                })
+                .then();
+        return stream.concatWith(writeBack.thenMany(Flux.empty()));
     }
 
     /**
