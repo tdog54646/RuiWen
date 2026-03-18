@@ -52,18 +52,18 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         // 公开内容：首页 Feed 不需要登录
-                        .requestMatchers("/api/v1/knowposts/feed").permitAll()
+                        .requestMatchers("/api/knowposts/feed").permitAll()
                         // 知文详情（公开已发布内容，非公开由服务层校验）
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/knowposts/detail/*").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/detail/*").permitAll()
                         // 知文详情页 RAG 问答（SSE 流式输出）允许匿名访问
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/knowposts/*/qa/stream").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/qa/stream").permitAll()
                         .requestMatchers(
-                                "/api/v1/auth/send-code",
-                                "/api/v1/auth/register",
-                                "/api/v1/auth/login",
-                                "/api/v1/auth/token/refresh",
-                                "/api/v1/auth/logout",
-                                "/api/v1/auth/password/reset"
+                                "/api/auth/send-code",
+                                "/api/auth/register",
+                                "/api/auth/login",
+                                "/api/auth/token/refresh",
+                                "/api/auth/logout",
+                                "/api/auth/password/reset"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

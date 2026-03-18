@@ -15,7 +15,7 @@ import java.util.Map;
  * 计数读取接口：返回指定实体在给定指标上的汇总计数（SDS）。
  */
 @RestController
-@RequestMapping("/api/v1/counter")
+@RequestMapping("/api/counter")
 public class CounterController {
 
     private final CounterService counterService;

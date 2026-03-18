@@ -20,7 +20,7 @@ import java.util.Map;
  * <p>所有接口基于登录用户，返回操作是否改变状态以及当前状态值。</p>
  */
 @RestController
-@RequestMapping("/api/v1/action")
+@RequestMapping("/api/action")
 public class ActionController {
 
     private final CounterService counterService;

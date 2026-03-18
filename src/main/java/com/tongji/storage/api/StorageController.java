@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/storage")
+@RequestMapping("/api/storage")
 @Validated
 @RequiredArgsConstructor
 public class StorageController {

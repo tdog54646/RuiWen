@@ -95,13 +95,12 @@ public class AuthService {
         if (identifierExists(request.identifierType(), identifier)) {
             throw new BusinessException(ErrorCode.IDENTIFIER_EXISTS);
         }
-        ensureVerificationSuccess(verificationService.verify(VerificationScene.REGISTER, identifier, request.code()));
 
         User user = User.builder()
                 .phone(request.identifierType() == IdentifierType.PHONE ? identifier : null)
                 .email(request.identifierType() == IdentifierType.EMAIL ? identifier : null)
                 .nickname(generateNickname())
-                .avatar("https://static.zhiguang.cn/default-avatar.png")
+                .avatar("https://sljava123.oss-cn-hangzhou.aliyuncs.com/avatars/1-1773801182172.jpg")
                 .bio(null)
                 .tagsJson("[]")
                 .build();
@@ -110,6 +109,9 @@ public class AuthService {
             validatePassword(request.password());
             user.setPasswordHash(passwordEncoder.encode(request.password().trim()));
         }
+
+        ensureVerificationSuccess(verificationService.verify(VerificationScene.REGISTER, identifier, request.code()));
+
 
         userService.createUser(user);
         TokenPair tokenPair = jwtService.issueTokenPair(user);
@@ -395,7 +397,7 @@ public class AuthService {
      * @return 随机昵称字符串。
      */
     private String generateNickname() {
-        return "知光用户" + UUID.randomUUID().toString().substring(0, 8);
+        return "一只克格莫" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     /**

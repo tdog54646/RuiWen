@@ -21,7 +21,7 @@ import java.util.function.IntFunction;
  * 缓存：ZSet 存储关注/粉丝列表；用户计数采用 SDS 固定结构（5×4 字节，大端编码），提供采样一致性校验与按需重建。
  */
 @RestController
-@RequestMapping("/api/v1/relation")
+@RequestMapping("/api/relation")
 public class RelationController {
     private final RelationService relationService;
     private final JwtService jwtService;

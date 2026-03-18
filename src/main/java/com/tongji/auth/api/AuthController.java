@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*;
  * 客户端信息：从请求头解析 IP 与 UA，用于审计登录日志。
  */
 @RestController
-@RequestMapping("/api/v1/auth")
+@RequestMapping("/api/auth")
 @RequiredArgsConstructor
 @Validated
 public class AuthController {
@@ -70,6 +70,7 @@ public class AuthController {
      */
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+
         return authService.login(request, resolveClient(httpRequest));
     }
 

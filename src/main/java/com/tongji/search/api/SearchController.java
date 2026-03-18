@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
  * - 参数通过 Spring Validation 进行基本校验
  */
 @RestController
-@RequestMapping("/api/v1/search")
+@RequestMapping("/api/search")
 @Validated
 @RequiredArgsConstructor
 public class SearchController {

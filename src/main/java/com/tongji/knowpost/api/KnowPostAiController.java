@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping(path = "/api/v1/knowposts", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(path = "/api/knowposts", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class KnowPostAiController {
 
