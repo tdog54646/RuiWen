@@ -72,22 +72,28 @@ services:
   canal:
     image: canal/canal-server:v1.1.7
     container_name: ruiwen-canal
+    platform: linux/amd64
     restart: always
     ports:
       - "11111:11111"
     environment:
-      # Use the service name 'mysql' instead of localhost
-      - canal.instance.master.address=mysql:3306
-      - canal.instance.dbUsername=canal
-      - canal.instance.dbPassword=Canal@123456
-      - canal.instance.connectionCharset=UTF-8
-      - canal.instance.tsdb.enable=true
-      - canal.instance.gtidon=false
-      - canal.instance.filter.regex=ruiwen\.outbox
-    depends_on:
-      - mysql
+      - CANAL_DESTINATIONS=example
     volumes:
-      - ./docs/canal/logs:/admin/canal-server/logs
+      - ./docs/canal/logs:/home/admin/canal-server/logs
+      - ./docs/canal/conf/example/instance.properties:/home/admin/canal-server/conf/example/instance.properties
+    networks:
+      - ruiwen-net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ruiwen-kafka-ui
+    restart: always
+    ports:
+      - "18080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=ruiwen-cluster
+      # 这里直接使用你网络内部的 kafka 容器名和端口
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
     networks:
       - ruiwen-net
 
