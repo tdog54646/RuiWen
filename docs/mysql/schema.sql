@@ -1,5 +1,4 @@
--- MySQL 8.0 schema for ZhiGuang authentication service
-
+-- MySQL 8.0 schema
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     phone VARCHAR(32) NULL,
@@ -108,3 +107,10 @@ CREATE TABLE IF NOT EXISTS follower (
     KEY idx_to_created (to_user_id, created_at, from_user_id, rel_status),
     KEY idx_from (from_user_id, to_user_id, rel_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE USER 'canal'@'%' IDENTIFIED BY 'Canal@123456';
+
+GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT
+    ON *.* TO 'canal'@'%';
+
+FLUSH PRIVILEGES;

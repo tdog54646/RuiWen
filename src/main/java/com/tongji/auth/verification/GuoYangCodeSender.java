@@ -21,7 +21,7 @@ import java.util.Map;
 public class GuoYangCodeSender implements CodeSender{
 
     @Value("${code.send.guo-yang.code-key}")
-    static String appCode;
+    private String appCode;
 
     /**
      * 记录验证码发送信息到日志。
@@ -46,7 +46,7 @@ public class GuoYangCodeSender implements CodeSender{
             headers.put("Authorization", "APPCODE " + appcode);
             Map<String, String> querys = new HashMap<String, String>();
             querys.put("mobile", identifier);
-             String format = String.format("**code**:{},**minute**:{}", code, expireMinutes);
+             String format = String.format("**code**:%s,**minute**:%s", code, expireMinutes);
             querys.put("param", format);
 
 //smsSignId（短信前缀）和templateId（短信模板），可登录国阳云控制台自助申请。参考文档：http://help.guoyangyun.com/Problem/Qm.html
