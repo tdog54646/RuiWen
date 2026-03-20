@@ -1,21 +1,6 @@
 # RuiWen 
 
-RuiWen 是一个基于 Spring Boot 和 Spring AI 构建的现代化知识社区平台。它集成了 RAG（检索增强生成）、全文检索以及稳健的分布式架构等高级特性。
-
-## 🌟 功能特性
-
-*   **认证与安全**：基于 Spring Security 和 OAuth2 Resource Server 实现的安全用户认证，使用 JWT（RSA 签名）。
-*   **AI 驱动**：
-    *   集成 **Deepseek** 和 **OpenAI**（通过阿里云 DashScope）。
-    *   使用 **Elasticsearch** 作为向量数据库实现 **RAG（检索增强生成）**。
-*   **内容管理**：支持知识帖子 (`knowpost`)、用户个人资料和社交关系管理。
-*   **搜索引擎**：基于 **Elasticsearch** 的全文检索和向量搜索能力。
-*   **高性能架构**：
-    *   **多级缓存**：采用 L1 (Caffeine) + L2 (Redis) 的多级缓存策略。
-    *   **分布式锁与限流**：使用 **Redisson** 实现。
-    *   **异步处理**：使用 **Kafka** 构建事件驱动架构（例如：计数器聚合）。
-*   **数据同步**：使用 **Canal** 实现 CDC（变更数据捕获），将 MySQL 数据实时同步到 Elasticsearch 等数据源。
-*   **文件存储**：支持 **阿里云 OSS** 对象存储。
+RuiWen 是一个基于 Spring Boot 和 Spring AI 构建的现代化知识社区平台。
 
 ## 🛠 技术栈
 
