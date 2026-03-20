@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntFunction;
 
 /**
  * 内容实体计数服务实现（位图事实 + 事件聚合 + SDS 汇总）。
@@ -134,13 +135,33 @@ public class CounterServiceImpl implements CounterService {
         int expectedLen = CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE;
         // SDS 固定结构：按大端 32 位编码
         byte[] raw = getRaw(sdsKey);
-        boolean needRebuild = (raw == null || raw.length != expectedLen);
+       boolean needRebuild = (raw == null || raw.length != expectedLen);
+        String chkKey = "cnt:chk:" + entityId;
+        // 采样校验：使用 Redis 锁限流，每用户 300s 触发一次
+        Boolean doCheck = redis.opsForValue().setIfAbsent(chkKey, "1", java.time.Duration.ofSeconds(300));
+
+        if (Boolean.TRUE.equals(doCheck)) {
+            for (String m : metrics) {
+                Integer idx = CounterSchema.NAME_TO_IDX.get(m);
+                if (idx == null) {
+                    continue;
+                }
+                long sum = bitCountShardsPipelined(m, entityType, entityId);
+                int off = idx * CounterSchema.FIELD_SIZE;
+                long val = readInt32BE(raw, off); // 大端读取单段 32 位值
+                if(sum != val){
+                    needRebuild = true;
+                    break;
+                }
+            }
+        }
 
         Map<String, Long> result = new LinkedHashMap<>();
 
         if (needRebuild) {
             // 限流与指数退避：避免在热点实体上触发重建风暴
             if (inBackoff(entityType, entityId)) {
+                escalateBackoff(entityType, entityId);
                 for (String m : metrics) {
                     result.put(m, 0L);
                 }

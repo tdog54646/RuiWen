@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tongji.relation.event.RelationEvent;
 import com.tongji.relation.processor.RelationEventProcessor;
 import com.tongji.util.OutboxMessageUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ import java.util.List;
  * Canal Outbox 消费者。
  * 职责：消费 Canal 桥接写入的 outbox 主题消息，提取 payload 并反序列化为 RelationEvent，交由处理器落库与更新缓存/计数；使用手动位点确保处理成功语义。
  */
+@Slf4j
 @Service
 public class CanalOutboxConsumer {
     private final ObjectMapper objectMapper;
@@ -54,7 +56,12 @@ public class CanalOutboxConsumer {
                 processor.process(evt);
             }
             ack.acknowledge();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            // 1. 打印完整的错误日志
+            log.error("消费 Canal Outbox 消息失败, message: {}", message, e);
+            // 2. 必须将异常抛出！触发 Spring Kafka 的重试机制，避免假性丢失和重启雪崩
+            throw new RuntimeException("处理 Outbox 消息失败", e);
+        }
     }
 }
 
