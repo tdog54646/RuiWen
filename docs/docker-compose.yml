@@ -6,7 +6,7 @@ services:
     container_name: ruiwen-mysql
     restart: always
     ports:
-      - "3309:3306"
+      - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: 1234
       MYSQL_DATABASE: ruiwen
@@ -16,8 +16,8 @@ services:
       - --binlog-format=ROW
       - --server-id=1
     volumes:
-      - ./docs/mysql/data:/var/lib/mysql
-      - ./docs/mysql:/docker-entrypoint-initdb.d
+      - ./mysql/data:/var/lib/mysql
+      - ./mysql:/docker-entrypoint-initdb.d
     networks:
       - ruiwen-net
 
@@ -29,7 +29,7 @@ services:
       - "6379:6379"
     command: redis-server --requirepass 1234
     volumes:
-      - ./docs/redis/data:/data
+      - ./redis/data:/data
     networks:
       - ruiwen-net
 
@@ -42,15 +42,21 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      # 绑定三个通道：EXTERNAL给外部(公网)，INTERNAL给内部(Docker)，CONTROLLER给集群管理
+      KAFKA_LISTENERS: EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      # 【核心修复】对外宣称的地址：公网来的走你的IP，Docker内部来的走kafka服务名
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://103.236.80.221:9092,INTERNAL://kafka:29092
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # 配置通道映射
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       CLUSTER_ID: 4L62no9pSFm676Y8v_A9LA
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     volumes:
-      - ./docs/kafka/data:/var/lib/kafka/data
+      - ./kafka/data:/var/lib/kafka/data
     networks:
       - ruiwen-net
 
@@ -65,7 +71,9 @@ services:
     ports:
       - "9201:9200"
     volumes:
-      - ./docs/elasticsearch/data:/usr/share/elasticsearch/data
+      - ./elasticsearch/data:/usr/share/elasticsearch/data
+      - # 将宿主机的 ik 目录直接挂载到容器的 plugins/ik 下
+      - ./elasticsearch/plugins/ik:/usr/share/elasticsearch/plugins/ik
     networks:
       - ruiwen-net
 
@@ -79,8 +87,8 @@ services:
     environment:
       - CANAL_DESTINATIONS=example
     volumes:
-      - ./docs/canal/logs:/home/admin/canal-server/logs
-      - ./docs/canal/conf/example/instance.properties:/home/admin/canal-server/conf/example/instance.properties
+      - ./canal/logs:/home/admin/canal-server/logs
+      - ./canal/conf/example/instance.properties:/home/admin/canal-server/conf/example/instance.properties
     networks:
       - ruiwen-net
 
@@ -100,3 +108,4 @@ services:
 networks:
   ruiwen-net:
     driver: bridge
+
