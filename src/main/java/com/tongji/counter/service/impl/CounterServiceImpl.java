@@ -140,7 +140,7 @@ public class CounterServiceImpl implements CounterService {
         // 采样校验：使用 Redis 锁限流，每用户 300s 触发一次
         Boolean doCheck = redis.opsForValue().setIfAbsent(chkKey, "1", java.time.Duration.ofSeconds(300));
 
-        if (Boolean.TRUE.equals(doCheck)) {
+        if (Boolean.TRUE.equals(doCheck)&&(!needRebuild)) {
             for (String m : metrics) {
                 Integer idx = CounterSchema.NAME_TO_IDX.get(m);
                 if (idx == null) {

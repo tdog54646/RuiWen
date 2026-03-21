@@ -38,55 +38,60 @@ public class RagQueryService {
      * 使用 WebFlux 返回回答内容的流。
      */
     public Flux<String> streamAnswerFlux(long postId, String question, int topK, int maxTokens) {
-        // 1) 语义缓存：先查 Redis（阈值严、扫描量小）
+        // 1) 语义缓存：先查 Redis
         String namespace = "post:" + postId;
         float[] qVec = SemanticCacheService.l2Normalize(embeddingService.embedQuery(question));
         double threshold = 0.95;
-        int scanLimit = 200;          // 控延迟：只扫最近 200 条（可按压测调整）
-        long ttlSeconds = 7 * 24 * 3600; // 7 天
+        int scanLimit = 200;
+        long ttlSeconds = 7 * 24 * 3600;
 
         var hitOpt = semanticCache.getIfHit(namespace, qVec, threshold, scanLimit);
         if (hitOpt.isPresent()) {
             return Flux.just(hitOpt.get().answer());
         }
+
         // 2) 未命中：走原 RAG
-        // 轻量保障：如索引不存在或指纹未变更则跳过，否则重建
         indexService.ensureIndexed(postId);
 
-        // 检索上下文：先宽召回，再按 postId 做服务端过滤
         List<String> contexts = searchContexts(String.valueOf(postId), question, Math.max(1, topK));
-        // 组装上下文文本，分隔符用于提示词中分块标识
         String context = String.join("\n\n---\n\n", contexts);
 
-        // 系统提示：限定只依据提供的上下文作答，无法确定需明确说明
         String system = "你是中文知识助手。只能依据提供的知文上下文回答；无法确定的请说明不确定。";
-        // 用户消息：包含问题和召回到的上下文
         String user = "问题：" + question + "\n\n上下文如下（可能不完整）：\n" + context + "\n\n请基于以上上下文作答。";
 
-        Flux<String> stream = chatClient
-                .prompt() // 构建对话
+        // 用于在单次订阅中“顺手”收集大模型返回的所有片段
+        List<String> answerChunks = new ArrayList<>();
+
+        return chatClient
+                .prompt()
                 .system(system)
                 .user(user)
                 .options(DeepSeekChatOptions.builder()
-                        .model("deepseek-chat") // 指定 DeepSeek 模型
-                        .temperature(0.2)       // 低温度：更稳健、少发散
-                        .maxTokens(maxTokens)    // 控制最大输出长度
+                        .model("deepseek-chat")
+                        .temperature(0.2)
+                        .maxTokens(maxTokens)
                         .build())
-                .stream()  // 以流式（SSE）返回模型输出
-                .content();
-        // 3) 回写缓存：聚合完整答案后写入 Redis
-        String cacheId = UUID.randomUUID().toString();
-        Mono<Void> writeBack = stream
-                .collectList()
-                .timeout(Duration.ofSeconds(60))
-                .doOnNext(parts -> {
-                    String answer = String.join("", parts);
-                    semanticCache.put(namespace, cacheId, question, qVec, answer, ttlSeconds);
+                .stream()
+                .content()
+                // 关键修改 1：利用 doOnNext 边输出边收集，绝不触发二次订阅
+                .doOnNext(chunk -> {
+                    if (chunk != null) {
+                        answerChunks.add(chunk);
+                    }
                 })
-                .then();
-        return stream.concatWith(writeBack.thenMany(Flux.empty()));
-    }
+                // 关键修改 2：流彻底输出完毕后，异步写回缓存
+                .doOnComplete(() -> {
+                    String answer = String.join("", answerChunks);
+                    String cacheId = UUID.randomUUID().toString();
 
+                    // 将可能阻塞的 Redis/DB 写入操作丢到弹性线程池，避免卡死 WebFlux 主线程
+                    Mono.fromRunnable(() -> {
+                                semanticCache.put(namespace, cacheId, question, qVec, answer, ttlSeconds);
+                            })
+                            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                            .subscribe(); // Fire and forget (只管发射，不管结果)
+                });
+    }
     /**
      * 语义检索上下文：
      * - 先进行宽召回（fetchK ≥ 3×topK，至少 20）提高召回率
