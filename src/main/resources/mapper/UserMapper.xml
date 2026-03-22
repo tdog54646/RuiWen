@@ -108,6 +108,7 @@
             <if test="school != null">school = #{school},</if>
             <if test="avatar != null">avatar = #{avatar},</if>
             <if test="tagsJson != null">tags_json = #{tagsJson},</if>
+            <if test="email != null">email = #{email},</if>
             updated_at = NOW()
         </set>
         WHERE id = #{id}

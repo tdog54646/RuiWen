@@ -72,7 +72,6 @@ services:
       - "9201:9200"
     volumes:
       - ./elasticsearch/data:/usr/share/elasticsearch/data
-      - # 将宿主机的 ik 目录直接挂载到容器的 plugins/ik 下
       - ./elasticsearch/plugins/ik:/usr/share/elasticsearch/plugins/ik
     networks:
       - ruiwen-net

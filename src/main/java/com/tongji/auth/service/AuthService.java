@@ -377,7 +377,8 @@ public class AuthService {
                 user.getSchool(),
                 user.getBio(),
                 user.getGender(),
-                user.getTagsJson()
+                user.getTagsJson(),
+                user.getEmail()
         );
     }
 
