@@ -5,6 +5,7 @@ package com.tongji.leaderboard.api.error;
  */
 public enum LeaderboardErrorCode {
     SUCCESS(0, "OK"),
+    UNAUTHORIZED(40101, "未登录或登录已失效"),
     BAD_REQUEST(40001, "参数非法"),
     LEADERBOARD_NOT_FOUND(40004, "榜单不存在"),
     BATCH_LIMIT_EXCEEDED(40029, "批量请求超限"),

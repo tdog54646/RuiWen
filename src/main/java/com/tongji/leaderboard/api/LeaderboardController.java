@@ -1,16 +1,21 @@
 package com.tongji.leaderboard.api;
 
+import com.tongji.auth.token.JwtService;
 import com.tongji.leaderboard.api.dto.BatchGetPositionsRequest;
 import com.tongji.leaderboard.api.dto.BatchGetPositionsResult;
 import com.tongji.leaderboard.api.dto.RankPosition;
 import com.tongji.leaderboard.api.dto.TopListResult;
 import com.tongji.leaderboard.api.dto.common.ApiEnvelope;
+import com.tongji.leaderboard.api.error.LeaderboardErrorCode;
+import com.tongji.leaderboard.api.error.LeaderboardException;
 import com.tongji.leaderboard.service.LeaderboardQueryService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,6 +33,8 @@ public class LeaderboardController {
 
     private final LeaderboardQueryService leaderboardQueryService;
 
+    private final JwtService jwtService;
+
     /**
      * 查询 Top 榜分页列表。
      */
@@ -44,11 +51,20 @@ public class LeaderboardController {
     /**
      * 查询单个用户当前名次。
      */
-    @GetMapping("/users/{userId}/position")
-    public ApiEnvelope<RankPosition> getUserPosition(@PathVariable("userId") @Min(1) long userId,
-                                                     @RequestParam("leaderboardType") @NotBlank String leaderboardType,
+    @GetMapping("/users/position")
+    public ApiEnvelope<RankPosition> getUserPosition(@RequestParam("leaderboardType") @NotBlank String leaderboardType,
                                                      @RequestParam("date") @NotBlank String date,
+                                                     @AuthenticationPrincipal Jwt jwt,
                                                      HttpServletRequest request) {
+        if (jwt == null) {
+            throw new LeaderboardException(LeaderboardErrorCode.UNAUTHORIZED);
+        }
+        long userId;
+        try {
+            userId = jwtService.extractUserId(jwt);
+        } catch (RuntimeException ex) {
+            throw new LeaderboardException(LeaderboardErrorCode.UNAUTHORIZED, LeaderboardErrorCode.UNAUTHORIZED.getDefaultMessage());
+        }
         RankPosition result = leaderboardQueryService.getUserPosition(leaderboardType, date, userId);
         return ApiEnvelope.ok(resolveRequestId(request), result);
     }
