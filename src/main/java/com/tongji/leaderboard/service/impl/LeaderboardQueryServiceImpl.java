@@ -47,14 +47,14 @@ public class LeaderboardQueryServiceImpl implements LeaderboardQueryService {
         long score = getRealtimeScore(rankName, userId);
         UserProfile userProfile = resolveUserProfile(userId);
         Optional<Long> exactRank = topLeaderboardService.getExactRank(rankName, userId);
-        if (exactRank.isPresent()) {
-            return new RankPosition(
-                    leaderboardType, date, userId, score, exactRank.get(), RankType.EXACT,
-                    userProfile.nickname(), userProfile.avatar());
-        }
         if (score <= 0) {
             return new RankPosition(
                     leaderboardType, date, userId, 0, 0, RankType.UNRANKED,
+                    userProfile.nickname(), userProfile.avatar());
+        }
+        if (exactRank.isPresent()) {
+            return new RankPosition(
+                    leaderboardType, date, userId, score, exactRank.get(), RankType.EXACT,
                     userProfile.nickname(), userProfile.avatar());
         }
         long estimate = segmentTreeService.estimateRank(rankName, score);
@@ -119,6 +119,9 @@ public class LeaderboardQueryServiceImpl implements LeaderboardQueryService {
                 .toList());
         List<com.tongji.leaderboard.api.dto.RankItem> enrichedItems = new ArrayList<>(items.size());
         for (com.tongji.leaderboard.api.dto.RankItem item : items) {
+            if (item.score() <= 0) {
+                continue;
+            }
             UserProfile userProfile = userProfileMap.getOrDefault(item.userId(), UserProfile.EMPTY);
             enrichedItems.add(new com.tongji.leaderboard.api.dto.RankItem(
                     item.rank(),
