@@ -57,6 +57,9 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/detail/*").permitAll()
                         // 知文详情页 RAG 问答（SSE 流式输出）允许匿名访问
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/qa/stream").permitAll()
+                        // 知文详情页热点问答允许匿名访问
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/qa/hotquestion").permitAll()
+                        .requestMatchers("/api/leaderboards/top").permitAll()
                         .requestMatchers(
                                 "/api/auth/send-code",
                                 "/api/auth/register",

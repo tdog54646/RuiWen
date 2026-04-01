@@ -1,7 +1,10 @@
 package com.tongji.knowpost.api;
 
+import com.tongji.knowpost.api.dto.HotQuestionResponse;
 import com.tongji.llm.rag.RagIndexService;
 import com.tongji.llm.rag.RagQueryService;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
@@ -19,7 +22,7 @@ public class KnowPostRagController {
 
     /**
      * 单篇知文 RAG 问答（WebFlux + Flux 流式输出）。
-     * 示例：GET /api/v1/knowposts/{id}/qa/stream?question=...&topK=5&maxTokens=1024
+     * 示例：GET /api/knowposts/{id}/qa/stream?question=...&topK=5&maxTokens=1024
      */
     @GetMapping(value = "/{id}/qa/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> qaStream(@PathVariable("id") long id,
@@ -27,6 +30,16 @@ public class KnowPostRagController {
                                  @RequestParam(value = "topK", defaultValue = "5") int topK,
                                  @RequestParam(value = "maxTokens", defaultValue = "1024") int maxTokens) {
         return ragQueryService.streamAnswerFlux(id, question, topK, maxTokens);
+    }
+
+    /**
+     * 单篇知文热点问答：从热点候选集随机返回 1 条问题文案。
+     */
+    @GetMapping("/{id}/qa/hotquestion")
+    public HotQuestionResponse hotQuestion(@PathVariable("id") long id,
+                                           @RequestParam(value = "limit", defaultValue = "10") @Min(1) @Max(50) int limit) {
+        RagQueryService.HotQuestionResult result = ragQueryService.getHotQuestion(id, limit);
+        return new HotQuestionResponse(result.postId(), result.question());
     }
 
     /**

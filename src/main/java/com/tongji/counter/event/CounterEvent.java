@@ -1,6 +1,8 @@
 package com.tongji.counter.event;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 计数事件模型。
@@ -9,6 +11,7 @@ import lombok.Data;
  * 由生产者发送到 Kafka，消费者聚合后折叠到汇总计数。</p>
  */
 @Data
+@NoArgsConstructor
 public class CounterEvent {
     private String entityType;
     private String entityId;

@@ -11,10 +11,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -171,8 +178,23 @@ public class RagIndexService {
      * 拉取正文内容（Markdown 文本）。
      */
     private String fetchContent(String url) {
+        if (!StringUtils.hasText(url)) {
+            return null;
+        }
+
         try {
-            return http.getForObject(url, String.class);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setAccept(List.of(MediaType.TEXT_HTML, MediaType.TEXT_PLAIN, MediaType.APPLICATION_JSON));
+            ResponseEntity<byte[]> resp = http.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), byte[].class);
+            byte[] bytes = resp.getBody();
+            if (bytes == null || bytes.length == 0) {
+                return null;
+            }
+            MediaType contentType = resp.getHeaders().getContentType();
+            Charset charset = (contentType != null && contentType.getCharset() != null)
+                    ? contentType.getCharset()
+                    : StandardCharsets.UTF_8;
+            return new String(bytes, charset);
         } catch (Exception e) {
             log.error("Fetch content failed: {}", e.getMessage());
             return null;

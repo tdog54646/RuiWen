@@ -14,6 +14,7 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.UUID;
 
 /**
@@ -41,7 +42,7 @@ public class RagQueryService {
         // 1) 语义缓存：先查 Redis
         String namespace = "post:" + postId;
         float[] qVec = SemanticCacheService.l2Normalize(embeddingService.embedQuery(question));
-        double threshold = 0.95;
+        double threshold = 0.98;
         int scanLimit = 200;
         long ttlSeconds = 7 * 24 * 3600;
 
@@ -92,6 +93,19 @@ public class RagQueryService {
                             .subscribe(); // Fire and forget (只管发射，不管结果)
                 });
     }
+
+    /**
+     * 从热点候选集中随机返回 1 条问题文案；无数据时返回 null question。
+     */
+    public HotQuestionResult getHotQuestion(long postId, int limit) {
+        String namespace = "post:" + postId;
+        List<SemanticCacheService.HotQaItem> hotItems = semanticCache.listHotQuestions(namespace, limit);
+        if (hotItems.isEmpty()) {
+            return new HotQuestionResult(postId, null);
+        }
+        int pick = ThreadLocalRandom.current().nextInt(hotItems.size());
+        return new HotQuestionResult(postId, hotItems.get(pick).question());
+    }
     /**
      * 语义检索上下文：
      * - 先进行宽召回（fetchK ≥ 3×topK，至少 20）提高召回率
@@ -115,4 +129,6 @@ public class RagQueryService {
         }
         return out;
     }
+
+    public record HotQuestionResult(long postId, String question) {}
 }

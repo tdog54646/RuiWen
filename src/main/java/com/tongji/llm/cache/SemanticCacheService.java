@@ -3,7 +3,6 @@ package com.tongji.llm.cache;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -35,105 +34,69 @@ public class SemanticCacheService {
      * @param scanLimit 本次最多扫描条数（控制延迟）
      */
     public Optional<CacheHit> getIfHit(String namespace, float[] queryVec, double threshold, int scanLimit) {
-        if (!StringUtils.hasText(namespace) || queryVec == null || queryVec.length == 0) {
+        if (!StringUtils.hasText(namespace) || queryVec == null || queryVec.length == 0 || scanLimit <= 0) {
             return Optional.empty();
         }
-
-        byte[] q = encodeFloat32(queryVec);
-
-        // Lua：取 zset 最近 scanLimit 个成员，然后对每个成员读取 hash.vec，计算 cosine（vec 已归一化则仅点积）
-        String lua = """
-                local zkey = KEYS[1]
-                local hprefix = ARGV[1]
-                local q = ARGV[2]
-                local threshold = tonumber(ARGV[3])
-                local limit = tonumber(ARGV[4])
-
-                local ids = redis.call('ZREVRANGE', zkey, 0, limit - 1)
-                local bestId = nil
-                local bestScore = -1
-
-                local function toFloats(b)
-                  local n = string.len(b) / 4
-                  local out = {}
-                  for i = 1, n do
-                    local p = (i - 1) * 4 + 1
-                    local b1 = string.byte(b, p)
-                    local b2 = string.byte(b, p + 1)
-                    local b3 = string.byte(b, p + 2)
-                    local b4 = string.byte(b, p + 3)
-                    local sign = (b4 > 127) and -1 or 1
-                    local exp = ((b4 % 128) * 2) + math.floor(b3 / 128)
-                    local mant = (b3 % 128) * 65536 + b2 * 256 + b1
-                    if exp == 0 and mant == 0 then
-                      out[i] = 0.0
-                    else
-                      local m = 1.0 + mant / 8388608.0
-                      out[i] = sign * m * (2.0 ^ (exp - 127))
-                    end
-                  end
-                  return out
-                end
-
-                local qf = toFloats(q)
-                for _, id in ipairs(ids) do
-                  local hkey = hprefix .. id
-                  local v = redis.call('HGET', hkey, 'vec')
-                  if v then
-                    local vf = toFloats(v)
-                    local dot = 0.0
-                    local len = math.min(#qf, #vf)
-                    for i = 1, len do
-                      dot = dot + qf[i] * vf[i]
-                    end
-                    if dot > bestScore then
-                      bestScore = dot
-                      bestId = id
-                    end
-                  end
-                end
-
-                if bestId and bestScore >= threshold then
-                  local hkey = hprefix .. bestId
-                  local ans = redis.call('HGET', hkey, 'ans')
-                  local qtext = redis.call('HGET', hkey, 'q')
-                  return {bestId, tostring(bestScore), ans, qtext}
-                end
-                return nil
-                """;
-
-        DefaultRedisScript<List> script = new DefaultRedisScript<>();
-        script.setScriptText(lua);
-        script.setResultType(List.class);
-
         String zkey = zsetKey(namespace);
-        String hprefix = "sc:h:" + namespace + ":";
 
         try {
-            List res = redis.execute(
-                    script,
-                    List.of(zkey),
-                    hprefix,
-                    Base64.getEncoder().encodeToString(q),
-                    String.valueOf(threshold),
-                    String.valueOf(scanLimit)
-            );
-            if (res == null || res.size() < 3) {
+            Set<String> ids = redis.opsForZSet().reverseRange(zkey, 0, scanLimit - 1L);
+            if (ids == null || ids.isEmpty()) {
                 return Optional.empty();
             }
-            String id = String.valueOf(res.get(0));
-            double score = Double.parseDouble(String.valueOf(res.get(1)));
-            String ans = res.get(2) == null ? null : String.valueOf(res.get(2));
-            String qtext = res.size() >= 4 && res.get(3) != null ? String.valueOf(res.get(3)) : null;
-            if (!StringUtils.hasText(ans)) return Optional.empty();
-            return Optional.of(new CacheHit(id, score, ans, qtext));
+
+            String bestId = null;
+            String bestAnswer = null;
+            String bestQuestion = null;
+            double bestScore = Double.NEGATIVE_INFINITY;
+
+            for (String id : ids) {
+                if (!StringUtils.hasText(id)) {
+                    continue;
+                }
+                String hkey = hashKey(namespace, id);
+                List<Object> fields = redis.opsForHash().multiGet(hkey, List.of("vec", "ans", "q"));
+                if (fields == null || fields.size() < 2) {
+                    redis.opsForZSet().remove(zkey, id);
+                    continue;
+                }
+
+                String vecBase64 = fields.get(0) == null ? null : String.valueOf(fields.get(0));
+                String answer = fields.get(1) == null ? null : String.valueOf(fields.get(1));
+                String qtext = fields.size() >= 3 && fields.get(2) != null ? String.valueOf(fields.get(2)) : null;
+                if (!StringUtils.hasText(vecBase64) || !StringUtils.hasText(answer)) {
+                    redis.opsForZSet().remove(zkey, id);
+                    continue;
+                }
+
+                float[] cachedVec = decodeFloat32(vecBase64);
+                if (cachedVec == null || cachedVec.length == 0) {
+                    continue;
+                }
+
+                double score = dot(queryVec, cachedVec);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestId = id;
+                    bestAnswer = answer;
+                    bestQuestion = qtext;
+                }
+            }
+
+            if (bestId == null || bestScore < threshold || !StringUtils.hasText(bestAnswer)) {
+                return Optional.empty();
+            }
+
+            // 命中后增加计数，让 zset score 表示真实命中次数
+            redis.opsForZSet().incrementScore(zkey, bestId, 1.0);
+            return Optional.of(new CacheHit(bestId, bestScore, bestAnswer, bestQuestion));
         } catch (DataAccessException e) {
             return Optional.empty();
         }
     }
 
     /**
-     * 写入语义缓存：ZSet 记录最近 id，Hash 存 vec/ans/q，并设置 TTL。
+     * 写入语义缓存：ZSet score 记录命中次数（首次写入为 1），Hash 存 vec/ans/q，并设置 TTL。
      */
     public void put(String namespace, String id, String question, float[] normalizedVec, String answer, long ttlSeconds) {
         if (!StringUtils.hasText(namespace) || !StringUtils.hasText(id) || normalizedVec == null || normalizedVec.length == 0) {
@@ -155,11 +118,49 @@ public class SemanticCacheService {
             redis.expire(hkey, java.time.Duration.ofSeconds(ttlSeconds));
         }
 
-        // score 用时间戳（毫秒），方便按最近窗口选 topN
-        redis.opsForZSet().add(zkey, id, System.currentTimeMillis());
+        // score 记录命中次数：仅首次写入时初始化为 1，避免覆盖已有计数
+        redis.opsForZSet().addIfAbsent(zkey, id, 1.0);
         // zset 本身也可给个较长 ttl（可选）
         if (ttlSeconds > 0) {
             redis.expire(zkey, java.time.Duration.ofSeconds(Math.max(ttlSeconds, 3600)));
+        }
+    }
+
+    /**
+     * 读取热点问答候选（按命中次数降序），并惰性清理 hash 已过期的脏成员。
+     */
+    public List<HotQaItem> listHotQuestions(String namespace, int limit) {
+        if (!StringUtils.hasText(namespace) || limit <= 0) {
+            return List.of();
+        }
+        try {
+            String zkey = zsetKey(namespace);
+            Set<org.springframework.data.redis.core.ZSetOperations.TypedTuple<String>> tuples =
+                    redis.opsForZSet().reverseRangeWithScores(zkey, 0, limit - 1L);
+            if (tuples == null || tuples.isEmpty()) {
+                return List.of();
+            }
+
+            List<HotQaItem> items = new ArrayList<>(tuples.size());
+            for (org.springframework.data.redis.core.ZSetOperations.TypedTuple<String> tuple : tuples) {
+                if (tuple == null || !StringUtils.hasText(tuple.getValue())) {
+                    continue;
+                }
+                String cacheId = tuple.getValue();
+                String hkey = hashKey(namespace, cacheId);
+                Object q = redis.opsForHash().get(hkey, "q");
+                if (!StringUtils.hasText(q == null ? null : String.valueOf(q))) {
+                    // hash 已不存在或无问题文案，视为脏成员并惰性清理 zset
+                    redis.opsForZSet().remove(zkey, cacheId);
+                    continue;
+                }
+                long hitCount = tuple.getScore() == null ? 0L : Math.round(tuple.getScore());
+                items.add(new HotQaItem(String.valueOf(q), hitCount));
+            }
+            return items;
+        } catch (DataAccessException e) {
+            // Redis 异常时降级为空，避免接口抛 5xx
+            return List.of();
         }
     }
 
@@ -185,5 +186,39 @@ public class SemanticCacheService {
         return bb.array();
     }
 
+    private static float[] decodeFloat32(String base64) {
+        if (!StringUtils.hasText(base64)) {
+            return null;
+        }
+        try {
+            byte[] bytes = Base64.getDecoder().decode(base64);
+            if (bytes.length == 0 || bytes.length % 4 != 0) {
+                return null;
+            }
+            ByteBuffer bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+            float[] out = new float[bytes.length / 4];
+            for (int i = 0; i < out.length; i++) {
+                out[i] = bb.getFloat();
+            }
+            return out;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static double dot(float[] a, float[] b) {
+        if (a == null || b == null || a.length == 0 || b.length == 0) {
+            return Double.NEGATIVE_INFINITY;
+        }
+        int len = Math.min(a.length, b.length);
+        double sum = 0.0;
+        for (int i = 0; i < len; i++) {
+            sum += (double) a[i] * b[i];
+        }
+        return sum;
+    }
+
     public record CacheHit(String id, double score, String answer, String cachedQuestion) {}
+
+    public record HotQaItem(String question, long hitCount) {}
 }
