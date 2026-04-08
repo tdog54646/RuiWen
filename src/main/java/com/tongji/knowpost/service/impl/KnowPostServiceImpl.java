@@ -8,6 +8,7 @@ import com.tongji.auth.exception.ErrorCode;
 import com.tongji.cache.hotkey.HotKeyDetector;
 import com.tongji.counter.service.CounterService;
 import com.tongji.knowpost.api.dto.KnowPostDetailResponse;
+import com.tongji.knowpost.event.KnowPostEvent;
 import com.tongji.knowpost.id.SnowflakeIdGenerator;
 import com.tongji.knowpost.mapper.KnowPostMapper;
 import com.tongji.knowpost.model.KnowPost;
@@ -15,6 +16,7 @@ import com.tongji.knowpost.model.KnowPostDetailRow;
 import com.tongji.knowpost.service.FeedCacheService;
 import com.tongji.knowpost.service.KnowPostService;
 import com.tongji.llm.rag.RagIndexService;
+import com.tongji.relation.outbox.OutboxMapper;
 import com.tongji.storage.config.OssProperties;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 @RequiredArgsConstructor
@@ -48,6 +51,7 @@ public class KnowPostServiceImpl implements KnowPostService {
     private static final int DETAIL_LAYOUT_VER = 1;
     private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
     private final RagIndexService ragIndexService;
+    private final OutboxMapper outboxMapper;
 
     /**
      * 创建草稿并返回新 ID。
@@ -141,7 +145,7 @@ public class KnowPostServiceImpl implements KnowPostService {
     }
 
     /**
-     * 发布草稿，设置状态与发布时间。
+     * 发布文章，设置状态与发布时间。
      */
     @Transactional
     public void publish(long creatorId, long id) {
@@ -153,6 +157,11 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
+        try {
+            Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
+            String payload = objectMapper.writeValueAsString(new KnowPostEvent("knowpost", "insert", id));
+            outboxMapper.insert(outId, "knowpost", id, "KnowPostInserted", payload);
+        } catch (Exception ignored) {}
         try {
             userCounterService.incrementPosts(creatorId, 1);
         } catch (Exception ignored) {}
