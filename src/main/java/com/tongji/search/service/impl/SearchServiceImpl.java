@@ -33,6 +33,7 @@ public class SearchServiceImpl implements SearchService {
 
     private final ElasticsearchClient es;
     private final CounterService counterService;
+
     /**
      * ES 索引名：ruiwen 内容统一索引。
      */
@@ -119,8 +120,10 @@ public class SearchServiceImpl implements SearchService {
             String authorAvatar = asString(source.get("author_avatar"));
             String authorNickname = asString(source.get("author_nickname"));
             String tagJson = asString(source.get("author_tag_json"));
-            Long likeCount = asLong(source.get("like_count"));
-            Long favoriteCount = asLong(source.get("favorite_count"));
+
+            Map<String, Long> counts = counterService.getCounts("knowpost", String.valueOf(id), List.of("like","fav"));
+            Long likeCount = counts.getOrDefault("like", 0L);
+            Long favoriteCount = counts.getOrDefault("fav", 0L);
             Boolean liked = currentUserIdNullable != null && counterService.isLiked("knowpost", id, currentUserIdNullable);
             Boolean faved = currentUserIdNullable != null && counterService.isFaved("knowpost", id, currentUserIdNullable);
             items.add(new FeedItemResponse(
