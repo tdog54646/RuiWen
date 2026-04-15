@@ -125,6 +125,18 @@ public class KnowPostController {
     }
 
     /**
+     * 指定用户的公开知文分页查询；默认每页 20，最大 50。
+     */
+    @GetMapping("/user")
+    public FeedPageResponse userPublished(@RequestParam(value = "page", defaultValue = "1") int page,
+                                          @RequestParam(value = "size", defaultValue = "20") int size,
+                                          @RequestParam("userId") long userId,
+                                          @AuthenticationPrincipal Jwt jwt) {
+        Long myId = (jwt == null) ? null : jwtService.extractUserId(jwt);
+        return feedService.getUserPublicPublished(userId, page, size, myId);
+    }
+
+    /**
      * 知文详情（公开：published+public；非公开需作者本人）。
      */
     @GetMapping("/detail/{id}")

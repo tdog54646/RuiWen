@@ -130,6 +130,17 @@ public class AuthController {
     }
 
     /**
+     * 根据用户 ID 查询用户概要信息。
+     *
+     * @param userId 用户 ID。
+     * @return 用户信息响应。
+     */
+    @GetMapping("/user")
+    public AuthUserResponse user(@RequestParam("userId") long userId) {
+        return authService.user(userId);
+    }
+
+    /**
      * 从请求中解析客户端信息。
      *
      * @param request HTTP 请求对象。

@@ -236,6 +236,32 @@ public class AuthService {
     }
 
     /**
+     * 根据用户 ID 查询用户概要信息，并隐藏联系方式。
+     *
+     * @param userId 用户 ID。
+     * @return 用户概要响应。
+     * @throws BusinessException 当用户不存在时抛出。
+     */
+    public AuthUserResponse user(long userId) {
+        User user = findUserById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND));
+        AuthUserResponse response = mapUser(user);
+        return new AuthUserResponse(
+                response.id(),
+                response.nickname(),
+                response.avatar(),
+                null,
+                response.zhId(),
+                response.birthday(),
+                response.school(),
+                response.bio(),
+                response.gender(),
+                response.tagJson(),
+                null
+        );
+    }
+
+    /**
      * 保证验证码校验成功，否则按状态抛出对应业务异常。
      *
      * @param result 验证码校验结果。

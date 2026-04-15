@@ -9,4 +9,6 @@ public interface KnowPostFeedService {
     FeedPageResponse getPublicFeed(int page, int size, Long currentUserIdNullable);
 
     FeedPageResponse getMyPublished(long userId, int page, int size);
+
+    FeedPageResponse getUserPublicPublished(long userId, int page, int size, Long myId);
 }

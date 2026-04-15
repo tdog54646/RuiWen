@@ -514,6 +514,26 @@ public class KnowPostFeedServiceImpl implements KnowPostFeedService {
     }
 
     /**
+     * 获取指定用户已发布的公开知文列表。
+     * 先复用“我的知文”查询，再按详情中的 visible/status 过滤，仅保留公开内容。
+     *
+     * @param userId 目标用户 ID
+     * @param page   页码（≥1）
+     * @param size   每页数量（1~50）
+     * @param myId   当前用户 ID（为空表示匿名）
+     * @return 带分页信息的公开知文列表
+     */
+    @Override
+    public FeedPageResponse getUserPublicPublished(long userId, int page, int size, Long myId) {
+        FeedPageResponse base = getMyPublished(userId, page, size);
+        List<FeedItemResponse> enriched = enrich(base.items(), myId);
+        List<FeedItemResponse> publicItems = enriched.stream()
+                .filter(item -> isPublicPublished(item.id()))
+                .toList();
+        return new FeedPageResponse(publicItems, base.page(), base.size(), base.hasMore());
+    }
+
+    /**
      * 解析 JSON 数组字符串为 List<String>。
      * @param json JSON 数组字符串
      * @return 字符串列表；解析失败或空字符串返回空列表
@@ -565,6 +585,22 @@ public class KnowPostFeedServiceImpl implements KnowPostFeedService {
             ));
         }
         return items;
+    }
+
+    /**
+     * 根据详情判断知文是否为公开已发布状态。
+     * @param knowPostId 知文 ID
+     * @return true 表示对外公开可见
+     */
+    private boolean isPublicPublished(String knowPostId) {
+        try {
+            KnowPostDetailRow detail = mapper.findDetailById(Long.parseLong(knowPostId));
+            return detail != null
+                    && "published".equals(detail.getStatus())
+                    && "public".equals(detail.getVisible());
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     /**
