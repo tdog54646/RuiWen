@@ -45,17 +45,56 @@
 
 ```mermaid
 flowchart LR
-  Client[客户端] --> API[Spring Boot API]
-  API --> MySQL[(MySQL)]
+  Client[Client / Frontend] --> API[Spring Boot API]
+
+  subgraph App[Line / RuiWen Backend]
+    API --> Auth[Auth Module]
+    API --> Profile[Profile Module]
+    API --> KnowPost[KnowPost Module]
+    API --> Relation[Relation Module]
+    API --> Counter[Counter Module]
+    API --> Leaderboard[Leaderboard Module]
+    API --> Search[Search Module]
+    API --> Storage[Storage Module]
+    API --> LLM[RAG / AI Module]
+    API --> Cache[Cache Layer]
+  end
+
+  Auth --> MySQL[(MySQL)]
+  Profile --> MySQL
+  KnowPost --> MySQL
+  Relation --> MySQL
+  Counter --> MySQL
+  Leaderboard --> MySQL
+  Search --> MySQL
+
   API --> Redis[(Redis)]
-  API --> OSS[阿里云 OSS]
-  MySQL --> Canal[Canal]
-  Canal --> App[应用内 Outbox 消费]
-  App --> Kafka[Kafka]
-  App --> ES[(Elasticsearch)]
-  API --> ES
-  API --> LLM[LLM / Embedding]
+  Cache --> Redis
+  Relation --> Redis
+  KnowPost --> Redis
+  Leaderboard --> Redis
+  Counter --> Redis
+
+  API --> OSS[Aliyun OSS]
+  Storage --> OSS
+
+  API --> ES[(Elasticsearch)]
+  Search --> ES
   LLM --> ES
+
+  API --> OpenAI[LLM / Embedding Provider]
+  LLM --> OpenAI
+
+  Counter --> Kafka[(Kafka)]
+  Kafka --> CounterConsumer[Counter Aggregation Consumers]
+  Kafka --> LeaderboardConsumer[Leaderboard Score Consumers]
+
+  MySQL --> Canal[Canal]
+  Canal --> RelationOutbox[Relation Outbox Consumer]
+  Canal --> SearchOutbox[Search Outbox Consumer]
+
+  RelationOutbox --> Kafka
+  SearchOutbox --> ES
 ```
 
 - **Outbox**：业务写入 MySQL 的 outbox 表后，由 Canal 捕获变更，应用内消费者再投递 Kafka 或更新 ES 索引，实现最终一致。
