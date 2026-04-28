@@ -97,9 +97,10 @@ flowchart LR
   SearchOutbox --> ES
 ```
 
-- **Outbox**：业务写入 MySQL 的 outbox 表后，由 Canal 捕获变更，应用内消费者再投递 Kafka 或更新 ES 索引，实现最终一致。
-- **计数**：行为写入经 Kafka 等路径聚合，支持重建与限流配置（见 `counter.*`）。
-- **搜索与 RAG**：业务索引与 Spring AI 向量索引协同；RAG 使用嵌入、检索与重排序（见 `com.tongji.llm.rag`）。
+## 系统架构图
+
+![RuiWen Architecture](docs/ruiwen-professional-architecture.svg)
+
 
 ---
 
