@@ -80,7 +80,7 @@ public class KnowPostServiceImpl implements KnowPostService {
     @Transactional
     public void confirmContent(long creatorId, long id, String objectKey, String etag, Long size, String sha256) {
         // 缓存双删（更新前先删除）
-        feedCacheService.deleteAllFeedCaches();
+        feedCacheService.deleteAndPublishPublicFeedCaches();
         feedCacheService.deleteMyFeedCaches(creatorId);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         KnowPost post = KnowPost.builder()
@@ -98,7 +98,7 @@ public class KnowPostServiceImpl implements KnowPostService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
         // 更新后再次删除，避免并发下写回旧值
-        feedCacheService.doubleDeleteAll(200);
+        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
 
@@ -116,7 +116,7 @@ public class KnowPostServiceImpl implements KnowPostService {
     @Transactional
     public void updateMetadata(long creatorId, long id, String title, Long tagId, List<String> tags, List<String> imgUrls, String visible, Boolean isTop, String description) {
         // 缓存双删（更新前先删除）
-        feedCacheService.deleteAllFeedCaches();
+        feedCacheService.deleteAndPublishPublicFeedCaches();
         feedCacheService.deleteMyFeedCaches(creatorId);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         KnowPost post = KnowPost.builder()
@@ -139,7 +139,7 @@ public class KnowPostServiceImpl implements KnowPostService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
         // 更新后再次删除，避免并发下写回旧值
-        feedCacheService.doubleDeleteAll(200);
+        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
     }
@@ -150,7 +150,7 @@ public class KnowPostServiceImpl implements KnowPostService {
     @Transactional
     public void publish(long creatorId, long id) {
         // 缓存双删（更新前先删除）
-        feedCacheService.deleteAllFeedCaches();
+        feedCacheService.deleteAndPublishPublicFeedCaches();
         feedCacheService.deleteMyFeedCaches(creatorId);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         int updated = mapper.publish(id, creatorId);
@@ -167,7 +167,7 @@ public class KnowPostServiceImpl implements KnowPostService {
         } catch (Exception ignored) {}
 
         // 更新后再次删除，避免并发下写回旧值
-        feedCacheService.doubleDeleteAll(200);
+        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
 
@@ -184,14 +184,14 @@ public class KnowPostServiceImpl implements KnowPostService {
      */
     @Transactional
     public void updateTop(long creatorId, long id, boolean isTop) {
-        feedCacheService.deleteAllFeedCaches();
+        feedCacheService.deleteAndPublishPublicFeedCaches();
         feedCacheService.deleteMyFeedCaches(creatorId);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         int updated = mapper.updateTop(id, creatorId, isTop);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
-        feedCacheService.doubleDeleteAll(200);
+        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
     }
@@ -204,14 +204,14 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (!isValidVisible(visible)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
         }
-        feedCacheService.deleteAllFeedCaches();
+        feedCacheService.deleteAndPublishPublicFeedCaches();
         feedCacheService.deleteMyFeedCaches(creatorId);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         int updated = mapper.updateVisibility(id, creatorId, visible);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
-        feedCacheService.doubleDeleteAll(200);
+        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
     }
@@ -221,14 +221,14 @@ public class KnowPostServiceImpl implements KnowPostService {
      */
     @Transactional
     public void delete(long creatorId, long id) {
-        feedCacheService.deleteAllFeedCaches();
+        feedCacheService.deleteAndPublishPublicFeedCaches();
         feedCacheService.deleteMyFeedCaches(creatorId);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         int updated = mapper.softDelete(id, creatorId);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
-        feedCacheService.doubleDeleteAll(200);
+        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
     }
