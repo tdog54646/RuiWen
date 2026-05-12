@@ -68,7 +68,7 @@ public class RagQueryService {
                 .system(system)
                 .user(user)
                 .options(DeepSeekChatOptions.builder()
-                        .model("deepseek-chat")
+                        .model("deepseek-v4-flash")
                         .temperature(0.2)
                         .maxTokens(maxTokens)
                         .build())
@@ -92,6 +92,32 @@ public class RagQueryService {
                             .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
                             .subscribe(); // Fire and forget (只管发射，不管结果)
                 });
+    }
+
+
+    /**
+     * 使用 WebFlux 返回回答内容的流。
+     */
+    public Flux<String> streamAllAnswerFlux(String question, int topK, int maxTokens) {
+
+        List<String> contexts = searchContexts(null, question, Math.max(1, topK));
+        String context = String.join("\n\n---\n\n", contexts);
+
+        String system = "你是中文知识助手。只能依据提供的知文上下文回答；无法确定的请说明不确定。";
+        String user = "问题：" + question + "\n\n上下文如下（可能不完整）：\n" + context + "\n\n请基于以上上下文作答。";
+
+
+        return chatClient
+                .prompt()
+                .system(system)
+                .user(user)
+                .options(DeepSeekChatOptions.builder()
+                        .model("deepseek-v4-flash")
+                        .temperature(0.2)
+                        .maxTokens(maxTokens)
+                        .build())
+                .stream()
+                .content();
     }
 
     /**
@@ -119,7 +145,7 @@ public class RagQueryService {
         List<String> out = new ArrayList<>(topK);
         for (Document d : docs) {
             Object pid = d.getMetadata().get("postId");
-            if (pid != null && postId.equals(String.valueOf(pid))) { // 仅保留当前帖子对应的切片
+            if ((postId==null)||(pid != null && postId.equals(String.valueOf(pid)))) { // 仅保留当前帖子对应的切片
                 String txt = d.getText();
                 if (txt != null && !txt.isEmpty()) {
                     out.add(txt);

@@ -6,11 +6,13 @@ import com.tongji.llm.rag.RagQueryService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/knowposts")
 @Validated
@@ -31,6 +33,20 @@ public class KnowPostRagController {
                                  @RequestParam(value = "maxTokens", defaultValue = "1024") int maxTokens) {
         return ragQueryService.streamAnswerFlux(id, question, topK, maxTokens);
     }
+
+
+    /**
+     *  RAG 问答（WebFlux + Flux 流式输出）。
+     * 示例：GET /api/knowposts/qa/stream?question=...&topK=5&maxTokens=1024
+     */
+    @GetMapping(value = "/qa/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> qaAllStream(@RequestParam("question") String question,
+                                 @RequestParam(value = "topK", defaultValue = "5") int topK,
+                                 @RequestParam(value = "maxTokens", defaultValue = "1024") int maxTokens) {
+        log.info("成功打到");
+        return ragQueryService.streamAllAnswerFlux(question, topK, maxTokens);
+    }
+
 
     /**
      * 单篇知文热点问答：从热点候选集随机返回 1 条问题文案。

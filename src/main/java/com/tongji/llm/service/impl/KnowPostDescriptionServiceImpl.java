@@ -32,7 +32,7 @@ public class KnowPostDescriptionServiceImpl implements KnowPostDescriptionServic
                     .system(system)
                     .user(user)
                     .options(DeepSeekChatOptions.builder()
-                            .model("deepseek-chat")
+                            .model("deepseek-v4-flash")
                             .temperature(0.8)
                             .maxTokens(120)
                             .build())
