@@ -171,7 +171,7 @@ public class SearchServiceImpl implements SearchService {
         } catch (Exception e) {
             return new SuggestResponse(Collections.emptyList());
         }
-        List<String> items = new ArrayList<>();
+        Set<String> items = new HashSet<>();
         try {
             var sugg = resp.suggest();
             List<Suggestion<Map<String, Object>>> entry = sugg == null ? null : sugg.get("title_suggest");
@@ -189,7 +189,7 @@ public class SearchServiceImpl implements SearchService {
                 }
             }
         } catch (Exception ignored) {}
-        return new SuggestResponse(items);
+        return new SuggestResponse(items.stream().toList());
     }
 
     /**
