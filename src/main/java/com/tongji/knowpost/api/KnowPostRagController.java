@@ -1,8 +1,9 @@
 package com.tongji.knowpost.api;
 
 import com.tongji.knowpost.api.dto.HotQuestionResponse;
-import com.tongji.llm.rag.RagIndexService;
-import com.tongji.llm.rag.RagQueryService;
+
+import com.tongji.llm.rag.index.RagIndexService;
+import com.tongji.llm.rag.query.RagQueryService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;

@@ -1,6 +1,8 @@
-package com.tongji.llm.rag;
+package com.tongji.llm.rag.query;
 
 import com.tongji.llm.cache.SemanticCacheService;
+import com.tongji.llm.rag.embedding.EmbeddingService;
+import com.tongji.llm.rag.index.RagIndexService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;

@@ -3,6 +3,9 @@ package com.tongji.config;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -21,8 +24,22 @@ public class ElasticsearchConfig {
 
     private final EsProperties props;
 
+    /**
+     * Jackson ObjectMapper 实例，供 ES JSON 序列化/反序列化以及业务代码共同使用。
+     */
     @Bean
-    public ElasticsearchClient elasticsearchClient() {
+    public ObjectMapper elasticsearchObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        // 1. 注册 Java 8 时间模块
+        mapper.registerModule(new JavaTimeModule());
+        // 2. 禁用纳秒级时间戳，强制输出纯整数毫秒
+        mapper.disable(SerializationFeature.WRITE_DATE_TIMESTAMPS_AS_NANOSECONDS);
+
+        return mapper;
+    }
+
+    @Bean
+    public ElasticsearchClient elasticsearchClient(ObjectMapper elasticsearchObjectMapper) {
         BasicCredentialsProvider creds = new BasicCredentialsProvider();
 
         if (StringUtils.hasText(props.getUsername())) {
@@ -35,7 +52,7 @@ public class ElasticsearchConfig {
                         .setDefaultCredentialsProvider(creds));
 
         RestClient restClient = builder.build();
-        RestClientTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
+        RestClientTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper(elasticsearchObjectMapper));
 
         return new ElasticsearchClient(transport);
     }

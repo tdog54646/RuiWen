@@ -1,4 +1,4 @@
-package com.tongji.llm.rag;
+package com.tongji.llm.rag.embedding;
 
 public interface EmbeddingService {
     /**

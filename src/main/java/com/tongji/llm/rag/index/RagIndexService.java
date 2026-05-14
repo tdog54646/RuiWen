@@ -1,4 +1,4 @@
-package com.tongji.llm.rag;
+package com.tongji.llm.rag.index;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
@@ -6,9 +6,9 @@ import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.tongji.config.EsProperties;
 import com.tongji.knowpost.mapper.KnowPostMapper;
 import com.tongji.knowpost.model.KnowPostDetailRow;
+import com.tongji.llm.rag.chunk.SemanticChunker;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.http.HttpEntity;
@@ -22,6 +22,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.*;
 
 /**
@@ -29,21 +30,22 @@ import java.util.*;
  * - 将公开且已发布的知文切片并写入向量库
  * - 通过指纹（SHA256/ETag）判断是否需要重建，保证幂等
  * - 采用 delete-by-query 清理旧切片，再批量 upsert 新切片
+ * - 使用 {@link SemanticChunker} 实现语义分块（相比旧版固定长度截断，
+ *   优先保护段落和句子边界，chunk 大小由 token 数控制，更适合 embedding 模型）
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RagIndexService {
-    private static final Logger log = LoggerFactory.getLogger(RagIndexService.class);
-    // 向量检索接口（Elasticsearch 向量库封装）
+
     private final VectorStore vectorStore;
-    // 数据访问：根据 postId 查询知文详情（含 contentUrl、指纹等）
     private final KnowPostMapper knowPostMapper;
-    // 拉取 Markdown 正文内容
-    private final RestTemplate http = new RestTemplate();
-    // 直接使用 ES 客户端做指纹判断和删除旧切片
     private final ElasticsearchClient es;
-    // ES 相关配置（索引名等）
     private final EsProperties esProps;
+    private final SemanticChunker semanticChunker;
+
+    // 拉取 Markdown 正文内容（每个实例创建一次 RestTemplate，避免重复创建开销）
+    private final RestTemplate http = new RestTemplate();
 
     public void ensureIndexed(long postId) {
         // 当前策略：在问答前直接尝试重建（指纹未变化时会跳过）
@@ -84,16 +86,22 @@ public class RagIndexService {
             return 0;
         }
 
-        // 先按 Markdown 标题切段，再做固定长度切片（带重叠）
+        // 文本处理
         List<String> chunks = chunkMarkdown(text);
+        log.info("Post {} content length={}, chunks size={}", postId, text.length(), chunks.size());
+        if (chunks.isEmpty()) {
+            log.warn("Post {} produced no chunks, skipping indexing", postId);
+            return 0;
+        }
         // 幂等 upsert：先删除旧切片
         deleteExistingChunks(postId);
 
         // 组装 Document（文本 + 业务元数据），用于向量写入与检索过滤
+        long nowMs = Instant.now().toEpochMilli();
         List<Document> docs = new ArrayList<>(chunks.size());
         for (int i = 0; i < chunks.size(); i++) {
             String cid = postId + "#" + i;
-            Map<String, Object> meta = new HashMap<>();
+            Map<String, Object> meta = new LinkedHashMap<>();
             meta.put("postId", String.valueOf(postId));
             meta.put("chunkId", cid);
             meta.put("position", i);
@@ -101,13 +109,16 @@ public class RagIndexService {
             meta.put("contentSha256", currentSha);
             meta.put("contentUrl", row.getContentUrl());
             meta.put("title", row.getTitle());
+            // 新增字段：与 es-mapping-rag-chunk.json 中的字段保持一致
+            meta.put("createdAt", nowMs);
+            meta.put("updatedAt", nowMs);
             docs.add(new Document(chunks.get(i), meta));
         }
         try {
             // 批量写入向量库
             vectorStore.add(docs);
         } catch (Exception e) {
-            log.error("VectorStore add failed: {}", e.getMessage());
+            log.error("VectorStore add failed: {} (docs size={})", e.getMessage(), docs.size(), e);
             return 0;
         }
         // 返回本次写入的切片数量
@@ -202,41 +213,60 @@ public class RagIndexService {
     }
 
     /**
-     * 按 Markdown 标题切段，再交由固定长度切片策略处理。
+     * 文本预处理 + 语义分块。
+     * <p>
+     * 相比旧版按 Markdown 标题切段 + 固定字符数截断（800字符/100重叠），
+     * 新版语义分块器 {@link SemanticChunker} 采用两阶段策略：
+     * <ol>
+     *   <li>按段落边界（\n\n）和中文标点（。！？；）切分语义单元。</li>
+     *   <li>交由 TokenTextSplitter 在 token 层面做细粒度截断
+     *      （默认 chunk_size=500 tokens, overlap=50 tokens）。</li>
+     * </ol>
+     * 这种方式更好地保护句子和段落的语义完整性，
+     * 适合 embedding 模型对固定 token 数输入的需求。
+     *
+     * @param text 归一化后的 Markdown 正文
+     * @return 语义分块后的文本列表
      */
     private List<String> chunkMarkdown(String text) {
-        List<String> paras = new ArrayList<>();
-        String[] lines = text.split("\r?\n");
-        StringBuilder buf = new StringBuilder();
-        for (String line : lines) {
-            boolean isHeader = line.startsWith("#");
-            if (isHeader && !buf.isEmpty()) { // 遇到新的标题，收束上一段
-                paras.add(buf.toString());
-                buf.setLength(0);
-            }
-            buf.append(line).append('\n');
-        }
-        if (!buf.isEmpty()) paras.add(buf.toString());
+        // 折叠多余空白、去掉行首行尾空格
+        String normalized = text
+                .replaceAll("\\r\\n", "\n")
+                .replaceAll("[ \\t]+", " ")
+                .replaceAll("\n[ \\t]+", "\n")
+                .trim();
 
-        return getChunks(paras);
+        // 交给 SemanticChunker 做语义分块
+        return semanticChunker.chunk(normalized);
     }
 
+    // -------------------------------------------------------------------------
+    // 旧版 getChunks 方法保留（供参考），新代码不再使用
+    // -------------------------------------------------------------------------
+
     /**
-     * 固定长度切片（每片 ≤ 800 字符），切片间 100 字符重叠：
-     * - 兼顾检索召回与上下文连续性
+     * @deprecated 请使用 {@link SemanticChunker#chunk(String)}，
+     *             本方法仅在历史兼容性场景下保留。
      */
+    @Deprecated
     private static List<String> getChunks(List<String> paras) {
         List<String> chunks = new ArrayList<>();
         for (String p : paras) {
-            if (p.length() <= 800) {
+            if (p.codePointCount(0, p.length()) <= 800) {
                 chunks.add(p);
             } else {
                 int start = 0;
+                int limit = 800;
                 while (start < p.length()) {
-                    int end = Math.min(start + 800, p.length());
+                    int end = Math.min(start + limit, p.length());
+                    int cpCount = p.codePointCount(start, end);
+                    while (cpCount > limit && end > start) {
+                        end--;
+                        cpCount = p.codePointCount(start, end);
+                    }
                     chunks.add(p.substring(start, end));
                     if (end >= p.length()) break;
-                    start = Math.max(end - 100, start + 1); // 重叠 100 字符以保留语义连续
+                    start = Math.max(end - 100, start + 1);
                 }
             }
         }

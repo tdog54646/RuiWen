@@ -15,7 +15,8 @@ import com.tongji.knowpost.model.KnowPost;
 import com.tongji.knowpost.model.KnowPostDetailRow;
 import com.tongji.knowpost.service.FeedCacheService;
 import com.tongji.knowpost.service.KnowPostService;
-import com.tongji.llm.rag.RagIndexService;
+
+import com.tongji.llm.rag.index.RagIndexService;
 import com.tongji.relation.outbox.OutboxMapper;
 import com.tongji.storage.config.OssProperties;
 import jakarta.annotation.Resource;

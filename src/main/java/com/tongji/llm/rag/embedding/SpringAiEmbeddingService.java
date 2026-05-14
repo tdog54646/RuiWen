@@ -1,4 +1,4 @@
-package com.tongji.llm.rag;
+package com.tongji.llm.rag.embedding;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.embedding.EmbeddingModel;
