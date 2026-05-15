@@ -51,6 +51,12 @@ public class CanalOutboxConsumer {
                 if (payloadNode == null) {
                     continue;
                 }
+                //TODO 统一outbox内payload内容
+                JsonNode payload = objectMapper.readTree(payloadNode.asText());
+                String entity = text(payload.get("entity"));
+                if ("knowpost".equals(entity) ) {
+                    continue;
+                }
                 
                 RelationEvent evt = objectMapper.readValue(payloadNode.asText(), RelationEvent.class);
                 processor.process(evt);
@@ -62,6 +68,10 @@ public class CanalOutboxConsumer {
             // 2. 必须将异常抛出！触发 Spring Kafka 的重试机制，避免假性丢失和重启雪崩
             throw new RuntimeException("处理 Outbox 消息失败", e);
         }
+    }
+
+    private String text(JsonNode n) {
+        return n == null ? null : n.asText();
     }
 }
 

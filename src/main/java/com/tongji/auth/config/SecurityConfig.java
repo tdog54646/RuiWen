@@ -48,6 +48,8 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(new CustomAuthenticationEntryPoint()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
@@ -55,6 +57,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/knowposts/feed").permitAll()
                         // 知文详情（公开已发布内容，非公开由服务层校验）
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/detail/*").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/rag/*").permitAll()
                         // 知文详情页 RAG 问答（SSE 流式输出）允许匿名访问
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/qa/stream").permitAll()
                         //.requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/qa/stream").permitAll()
