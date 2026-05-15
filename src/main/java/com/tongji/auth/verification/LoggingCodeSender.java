@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  * 不实际发送，仅记录日志，便于本地开发与集成测试。
  */
 @Slf4j
-@Component
+//@Component
 public class LoggingCodeSender implements CodeSender {
 
     /**
