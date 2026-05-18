@@ -62,15 +62,10 @@ public class PromptTemplateService {
             );
         }
 
-        // 过滤掉内容过短的 chunk（低于 20 字符视为无意义碎片）
-        List<RetrievalChunk> validChunks = chunks.stream()
-                .filter(c -> c.getContent() != null && c.getContent().codePointCount(0, c.getContent().length()) >= 20)
-                .limit(properties.getPrompt().getContextLimit())
-                .toList();
 
-        String systemText = buildSystemPrompt(validChunks);
-        String userText = buildUserPrompt(question, validChunks);
-        boolean hasContext = !validChunks.isEmpty();
+        String systemText = buildSystemPrompt(chunks);
+        String userText = buildUserPrompt(question, chunks);
+        boolean hasContext = !chunks.isEmpty();
 
         return new PromptResult(systemText, userText, hasContext);
     }
