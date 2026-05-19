@@ -69,6 +69,39 @@ public class RagProperties {
         private int minLength = 0;
         /** Chunk 最大字符数。超过此值的超长 Chunk 会被截断。 */
         private int maxLength = 2000;
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Markdown 结构感知切分配置（mode B / mode A）
+        // ─────────────────────────────────────────────────────────────────────
+        /**
+         * 是否启用 Markdown 结构感知切分。
+         * false = 退化为原有段落 + TokenTextSplitter 逻辑。
+         */
+        private boolean markdownAware = true;
+        /**
+         * 切分模式：rule（纯规则，默认）/ llm（LLM 增强）。
+         */
+        private ChunkMode mode = ChunkMode.RULE;
+        /**
+         * 是否启用 Header Anchoring（标题与紧随内容合并）。
+         * true = 标题与紧随段落/代码块/列表合并，不拆散。
+         */
+        private boolean headerAnchoring = true;
+        /**
+         * 获取 overlap 占 chunk size 的百分比。
+         */
+        public int getOverlapPercent() {
+            if (size <= 0) return 0;
+            return (int) (overlap * 100.0 / size);
+        }
+    }
+
+    /** 切分模式枚举 */
+    public enum ChunkMode {
+        /** 纯规则模式：MarkdownBlockParser + SectionMerger（推荐，零成本） */
+        RULE,
+        /** LLM 增强模式：调用 DeepSeek 完成结构提取和合并 */
+        LLM
     }
 
     @Data

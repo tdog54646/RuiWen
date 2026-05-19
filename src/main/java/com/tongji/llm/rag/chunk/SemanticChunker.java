@@ -1,6 +1,7 @@
 package com.tongji.llm.rag.chunk;
 
 import com.tongji.llm.rag.model.RagProperties;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.stereotype.Component;
@@ -12,74 +13,59 @@ import java.util.regex.Pattern;
 /**
  * 语义文本分块器（Semantic Chunker）。
  * <p>
- * 本实现采用"语义优先"的二层切分策略，力求在 token 数量约束
- * 与语义完整性之间取得平衡：
- * <ol>
- *   <li><b>第一层：段落边界切分。</b> 优先在自然段落边界（{@code \n\n}）
- *       以及中文标点（{`。！？；`}）处断开，保持句子和段落的完整性。</li>
- *   <li><b>第二层：Token 层面截断。</b> 使用 Spring AI 的
- *       {@link TokenTextSplitter} 在 token 层面做细粒度截断，
- *       并通过 overlap 参数在相邻 chunk 之间保留上下文连续性。</li>
- * </ol>
- * <p>
- * 这种两阶段策略相比简单按字符数截断的优势在于：
+ * 支持两种切分策略，由配置项 {@code rag.chunk.mode} 决定：
  * <ul>
- *   <li>重要信息（如代码块、列表项）不会被拦腰截断。</li>
- *   <li>overlap 使相邻 chunk 共享上下文，降低跨 chunk 语义丢失的风险。</li>
- *   <li>Token 层面的截断保证最终 chunk 的大小符合 embedding 模型的上下文窗口约束。</li>
+ *   <li><b>rule（默认，推荐）</b>：纯规则模式，使用 {@link MarkdownBlockParser} 解析
+ *       Markdown 块级元素（标题/代码/表格/列表等），再由 {@link MarkdownSectionMerger}
+ *       按 token 限制合并，零成本、无延迟。</li>
+ *   <li><b>llm</b>：LLM 增强模式，调用 DeepSeek 完成结构提取和合并，
+ *       效果更好但有 API 调用开销。</li>
+ *   <li><b>legacy（默认关闭）</b>：原有逻辑，使用段落边界 + TokenTextSplitter，
+ *       通过设置 {@code rag.chunk.markdown-aware: false} 启用。</li>
  * </ul>
  *
- * <p><b>使用示例：</b>
- * <pre>
- * List&lt;String&gt; chunks = semanticChunker.chunk(markdownText);
- * </pre>
- *
- * @see TokenTextSplitter
+ * @see MarkdownBlockParser
+ * @see MarkdownSectionMerger
+ * @see LlmMarkdownChunker
  * @see RagProperties.Chunk
  */
+@Slf4j
 @Component
 public class SemanticChunker {
 
-    /**
-     * 段落分隔符：连续两个或以上换行符。
-     * 匹配 \n\n、\r\n\r\n、\n\r\n\r 等常见段落分隔模式。
-     */
     private static final Pattern PARAGRAPH_SEPARATOR = Pattern.compile("(\\r\\n){2,}|\\n{2,}");
-
-    /**
-     * 中文句子结束标点：句号、感叹号、问号、分号。
-     * 在第一层切分时作为次优先的断点。
-     */
     private static final Pattern CHINESE_PUNCT = Pattern.compile("[。！？；]");
 
-    /**
-     * Spring AI 内置的 Token 分块器。
-     * 内部维护 token 计数逻辑，保证每个 chunk 不超过指定 token 数。
-     */
     private final TokenTextSplitter tokenSplitter;
-
     private final RagProperties properties;
 
-    public SemanticChunker(RagProperties properties) {
+    // 模式 B 组件（按需初始化）
+    private MarkdownBlockParser blockParser;
+    private MarkdownSectionMerger sectionMerger;
+
+    // 模式 A 组件（按需注入）
+    private final LlmMarkdownChunker llmChunker;
+
+    public SemanticChunker(RagProperties properties, LlmMarkdownChunker llmChunker) {
         this.properties = properties;
+        this.llmChunker = llmChunker;
         this.tokenSplitter = new TokenTextSplitter(
-                properties.getChunk().getSize(),       // chunkSize: 每个 chunk 的目标 token 数
-                properties.getChunk().getOverlap(),    // chunkOverlap: 相邻 chunk 重叠 token 数
-                1,                                      // minChunkSizeChars: 字符数下限（本实现用 minLength 控制）
-                Integer.MAX_VALUE,                     // minChunkLengthToEmbed: 最小截取长度（本实现跳过此过滤）
-                true                                    // keepSeparator: 保留分隔符
+                properties.getChunk().getSize(),
+                properties.getChunk().getOverlap(),
+                1,
+                Integer.MAX_VALUE,
+                true
         );
     }
 
     /**
      * 对输入文本进行语义分块，返回 chunk 列表。
      * <p>
-     * 处理流程：
+     * 路由逻辑：
      * <ol>
-     *   <li>文本归一化（折叠多余空白）。</li>
-     *   <li>按段落和中文标点做第一层切分，得到语义单元列表。</li>
-     *   <li>将语义单元列表 join 后送入 TokenTextSplitter 做第二层截断。</li>
-     *   <li>按 minLength / maxLength 过滤过短 / 过长的 chunk。</li>
+     *   <li>{@code markdown-aware=false} → 原有 TokenTextSplitter 逻辑</li>
+     *   <li>{@code mode=llm} → LLM 增强切分</li>
+     *   <li>{@code mode=rule} 或默认 → 纯规则切分</li>
      * </ol>
      *
      * @param text 待分块的原始文本（通常为 Markdown 纯文本）
@@ -90,28 +76,91 @@ public class SemanticChunker {
             return List.of();
         }
 
-        // 文本归一化——折叠连续空白、去掉行首行尾空格
-        String normalized = normalize(text);
-
-        // 短文本快捷路径：直接返回原文，不走复杂分块
-        int estimatedTokens = estimateTokens(normalized);
+        // 短文本快捷路径
+        int estimatedTokens = estimateTokens(text);
         if (estimatedTokens < 50) {
-            return List.of(normalized);
+            return List.of(text);
         }
 
-        // Step 2: 第一层：按段落边界（\n\n）和中文标点（。！？；）做语义切分
+        // 路由
+        if (!properties.getChunk().isMarkdownAware()) {
+            return chunkLegacy(text);
+        }
+
+        return switch (properties.getChunk().getMode()) {
+            case LLM -> chunkByLLM(text);
+            default  -> chunkByRule(text);  // null / unknown → default to rule
+        };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 模式 A：纯规则切分
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private List<String> chunkByRule(String text) {
+        // 初始化（延迟加载，避免构造函数中直接注入未知组件）
+        if (blockParser == null) {
+            blockParser = new MarkdownBlockParser();
+            sectionMerger = new MarkdownSectionMerger(
+                    properties.getChunk().getSize(),
+                    properties.getChunk().getOverlapPercent(),
+                    properties.getChunk().getMinLength()
+            );
+        }
+
+        // 文本归一化
+        String normalized = normalize(text);
+
+        // Step 1: 解析块级元素
+        List<MarkdownSection> sections = blockParser.parse(normalized);
+        if (sections.isEmpty()) {
+            // 解析失败，降级到 legacy
+            log.debug("Block parser returned empty, falling back to legacy");
+            return chunkLegacy(text);
+        }
+
+        // Step 2: Section → Chunk 合并
+        List<MarkdownChunkResult> chunks = sectionMerger.merge(sections);
+
+        // Step 3: 提取 content 字段
+        List<String> result = chunks.stream()
+                .map(MarkdownChunkResult::content)
+                .toList();
+
+        log.debug("Rule chunking: sections={}, chunks={}", sections.size(), result.size());
+        return result;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 模式 B：LLM 增强切分
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private List<String> chunkByLLM(String text) {
+        List<String> chunks = llmChunker.chunk(text);
+        if (chunks.isEmpty()) {
+            // LLM 失败，降级到 rule 模式
+            log.warn("LLM chunking returned empty, falling back to rule mode");
+            return chunkByRule(text);
+        }
+        return chunks;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 原有逻辑（legacy / markdown-aware=false）
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private List<String> chunkLegacy(String text) {
+        String normalized = normalize(text);
+
+        // Step 1: 段落边界 + 中文标点切分
         List<String> semanticUnits = splitBySemanticBoundaries(normalized);
 
-        // Step 3: 将语义单元 join 为可处理的文本
-        // 段落之间用双换行符连接，保留原始段落边界提示
+        // Step 2: join 后送入 TokenTextSplitter
         String prepared = String.join("\n\n", semanticUnits);
-
-        // Step 4: TokenTextSplitter 做第二层 token 层面的截断
-        // TokenTextSplitter.split(String) 不是公开 API，需将 String 包装为 Document 再调用
         Document doc = new Document(prepared);
         List<Document> splitDocs = tokenSplitter.split(doc);
 
-        // Step 5: 按字符长度过滤
+        // Step 3: 长度过滤
         int minLen = properties.getChunk().getMinLength();
         int maxLen = properties.getChunk().getMaxLength();
         List<String> result = new ArrayList<>(splitDocs.size());
@@ -121,31 +170,19 @@ public class SemanticChunker {
             if (len >= minLen && len <= maxLen) {
                 result.add(chunk);
             } else if (len > maxLen) {
-                // 超出 maxLength 的超长块，强制按字符数截断
                 result.add(truncateByCodePoints(chunk, maxLen));
             }
-            // len < minLength 的块直接丢弃
+            // len < minLen → 丢弃
         }
         return result;
     }
 
-    /**
-     * 将文本按段落（\n\n）和中文标点（。！？；）切分为语义单元。
-     * <p>
-     * 优先级：段落边界 &gt; 中文标点边界 &gt; 不截断
-     * <ul>
-     *   <li>段落之间天然有较大语义跳跃，优先在段落边界切断。</li>
-     *   <li>中文标点是句子边界，在段落内按标点切分能保证句子完整性。</li>
-     *   <li>没有段落也没有标点的超长段落，则不强行截断（后续 tokenSplitter 会处理）。</li>
-     * </ul>
-     *
-     * @param text 归一化后的文本
-     * @return 语义单元列表，每个元素是一个段落或由多个短段落合并的文本块
-     */
+    // ─────────────────────────────────────────────────────────────────────────
+    // 原有辅助方法
+    // ─────────────────────────────────────────────────────────────────────────
+
     private List<String> splitBySemanticBoundaries(String text) {
         List<String> units = new ArrayList<>();
-
-        // 先按段落分隔符拆分
         String[] paras = PARAGRAPH_SEPARATOR.split(text);
 
         for (String para : paras) {
@@ -153,104 +190,63 @@ public class SemanticChunker {
             if (trimmed.isEmpty()) {
                 continue;
             }
-
-            // 段落长度小于目标 chunk 大约一半时，直接作为独立语义单元
-            // 避免过度切分导致过多碎片 chunk
             int approxTokens = estimateTokens(trimmed);
             if (approxTokens <= properties.getChunk().getSize() / 2) {
                 units.add(trimmed);
                 continue;
             }
-
-            // 长段落：尝试在中文标点边界进一步拆分
             List<String> subUnits = splitByChinesePunctuation(trimmed);
             units.addAll(subUnits);
         }
-
         return units;
     }
 
-    /**
-     * 在中文标点边界（。！？；）处切分长文本。
-     * 每个子单元长度尽量接近 chunkSize，但仍可能超出（此时后续 TokenTextSplitter 兜底截断）。
-     *
-     * @param text 输入文本（单个段落，不含段落分隔符）
-     * @return 按标点切分后的文本片段列表
-     */
     private List<String> splitByChinesePunctuation(String text) {
         List<String> result = new ArrayList<>();
         String[] sentences = CHINESE_PUNCT.split(text);
-
         StringBuilder buffer = new StringBuilder();
 
-        for (int i = 0; i < sentences.length; i++) {
-            String sentence = sentences[i].trim();
-            if (sentence.isEmpty()) {
+        for (String sentence : sentences) {
+            String s = sentence.trim();
+            if (s.isEmpty()) {
                 continue;
             }
-
-            // 加上标点本身（分隔时丢失了标点字符，需要补回）
-            // 注意：split 后标点丢失，这里用 splitWithDelimiters 或手动处理
-            // 为简化，直接在 buffer 追加时不带标点，在合并时判断
-
             if (buffer.isEmpty()) {
-                buffer.append(sentence);
+                buffer.append(s);
             } else {
                 int bufTokens = estimateTokens(buffer.toString());
-                int sentTokens = estimateTokens(sentence);
-
-                // 如果加上这句不超过 chunkSize 的一半，则合并；否则先输出 buffer
+                int sentTokens = estimateTokens(s);
                 if (bufTokens + sentTokens <= properties.getChunk().getSize() / 2) {
-                    buffer.append("。").append(sentence);
+                    buffer.append("。").append(s);
                 } else {
                     result.add(buffer.toString());
                     buffer.setLength(0);
-                    buffer.append(sentence);
+                    buffer.append(s);
                 }
             }
         }
-
         if (!buffer.isEmpty()) {
             result.add(buffer.toString());
         }
-
         return result.isEmpty() ? List.of(text) : result;
     }
 
-    /**
-     * 文本归一化：折叠多余空白、去掉行首行尾多余空格。
-     */
     private String normalize(String text) {
         return text
-                .replaceAll("\\r\\n", "\n")              // 统一换行符
-                .replaceAll("[ \\t]+", " ")              // 折叠连续空格/制表符
-                .replaceAll("\n[ \\t]+", "\n")           // 去掉行首空格
+                .replaceAll("\\r\\n", "\n")
+                .replaceAll("[ \\t]+", " ")
+                .replaceAll("\n[ \\t]+", "\n")
                 .trim();
     }
 
-    /**
-     * 简单 token 估算：中文按字符数估算（1 char ≈ 1 token），
-     * 英文按空格+1 估算（1 word ≈ 1.3 token），取上界。
-     * <p>
-     * 该估算仅用于策略判断（是否合并/切分），不用于精确截断。
-     * 精确截断由 TokenTextSplitter 通过真实 token 计数完成。
-     */
     private int estimateTokens(String text) {
         if (text == null || text.isEmpty()) {
             return 0;
         }
-        // 简单估算：总字符数 + 空格分隔的单词数 * 0.3
         long wordCount = text.chars().filter(c -> c == ' ' || c == '\t').count();
         return (int) (text.codePointCount(0, text.length()) + wordCount * 0.3 + 1);
     }
 
-    /**
-     * 按 code point（Unicode 码点）截断文本，保证中英文混合截断的正确性。
-     *
-     * @param text  待截断文本
-     * @param limit 最大 code point 数量
-     * @return 截断后的文本
-     */
     private String truncateByCodePoints(String text, int limit) {
         int count = 0;
         StringBuilder sb = new StringBuilder();
