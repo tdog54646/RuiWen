@@ -87,7 +87,7 @@ canal:
   port: ${CANAL_PORT:11111}
   destination: ${CANAL_DESTINATION:example}
   username: ${CANAL_USERNAME:canal}
-  password: ${CANAL_PASSWORD:ZCVWHi2wsTesQzy0TfoF0sxMGE5PwLWZXUj8g6qhp87s73Kv}
+  password: ${CANAL_PASSWORD:C7vL2pQ9xM4sT8zN5yK3wH6rA1dE0}
   filter: ${CANAL_FILTER:ruiwen\.outbox}
   batchSize: ${CANAL_BATCH_SIZE:1000}
   intervalMs: ${CANAL_INTERVAL_MS:1000}

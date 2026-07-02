@@ -1,273 +1,295 @@
-# Line
+# RuiWen
 
-**Line** 是一个面向知识分享与社交互动的后端服务：基于 **Spring Boot 3** 与 **Spring AI**，提供用户认证、知文（帖子）创作与分发、关注关系、互动计数、全文检索与联想、排行榜，以及基于向量检索与重排序的 **RAG 问答**与 AI 辅助能力。数据层以 **MySQL** 为权威存储，通过 **Canal** 订阅 binlog 驱动 **Outbox** 消息，将关系、搜索索引等异步与外部系统对齐。
+RuiWen 是一个知识创作、社交互动与 RAG 问答平台。仓库现在按前后端分离组织：
 
-> 说明：仓库根目录 Maven 工程名为 `RuiWen`（`artifactId`、主类 `com.tongji.RuiWenApplication`、默认 JAR 名为 `RuiWen-1.0-SNAPSHOT.jar`），产品对外名称使用 **Line**。
-
----
+- `backend/`：Spring Boot 3 后端，提供认证、知文、关注关系、互动计数、搜索、排行榜、OSS 上传和 RAG 问答能力。
+- `frontend/`：Next.js 前端，提供登录注册、知识帖浏览与创作、问答、搜索、排行榜和个人资料页面。
+- `deploy/`：MySQL、Redis、Kafka、Elasticsearch IK、Canal、Nginx 和部署 hook 的运行配置。
+- `scripts/`：Docker 发布包构建、部署 hook 打包和签名上传脚本。
 
 ## 功能概览
 
-| 领域 | 说明 |
-|------|------|
-| **认证** | 手机/邮箱验证码、注册、密码或验证码登录、JWT（Access/Refresh，RS256）、登出、重置密码；登录审计；验证码发送限流（每日/间隔限制） |
-| **个人资料** | 资料 PATCH、头像上传（阿里云 OSS 预签名直传） |
-| **知文** | 草稿创建、内容上传确认、元数据更新（标题/标签/可见性/置顶）、发布/软删除；AI 描述建议（DeepSeek 生成，不超过 50 字） |
-| **Feed** | 首页/我的/用户公开列表；三级缓存（Caffeine 本地 → Redis 页面 → Redis 分片缓存），单航班防击穿，热键动态 TTL 扩展 |
-| **检索** | Elasticsearch 关键词搜索（multi_match + function_score 互动加权）、标签过滤、游标分页（search_after）；Completion 联想建议 |
-| **RAG** | 单篇/全局流式问答（SSE）、混合检索（向量+BM25+RRF 融合）、语义缓存（7 天 TTL）、语义分块（Markdown 感知）、热点问答、手动重建向量索引；支持 Reranker 精排 |
-| **关系** | 关注/取关（Redis Lua 令牌桶限流）、关系状态、关注/粉丝列表（ZSet + Caffeine 本地缓存）；大V用户 Top500 本地缓存；Canal Outbox 异步驱动 |
-| **互动与计数** | 点赞/收藏（Redis 位图原子切换 + Kafka 聚合）、SDS 大端 32 位汇总、异常时基于位图分片重建、限流+指数退避防重建风暴 |
-| **排行榜** | 按类型与日期的 Top 榜；Redis Sorted Set + 线段树 10,000 粗估查询；每日点赞分数变更 Kafka 消费 |
-| **存储** | 阿里云 OSS PUT 预签名直传（10 分钟有效期），支持知文正文和图片两种场景 |
-
-公开接口（无需登录）：认证相关路径、`/api/knowposts/feed`、知文详情 GET、`/api/knowposts/*/qa/stream`、`/api/knowposts/*/qa/hotquestion`、`/api/leaderboards/top` 等；其余默认需携带 JWT。详见 `com.tongji.auth.config.SecurityConfig`。
-
----
+| 模块 | 能力 |
+| --- | --- |
+| 认证 | 手机/邮箱验证码、注册、登录、刷新令牌、登出、重置密码、JWT RS256 鉴权和登录审计 |
+| 用户资料 | 资料编辑、头像上传、OSS 预签名直传 |
+| 知文 | 草稿创建、Markdown 内容编辑、发布、详情、Feed、可见性、置顶、软删除 |
+| AI 与 RAG | 知文描述建议、单篇问答、全局问答、Markdown 语义切分、向量检索、BM25、RRF 融合、语义缓存和可选重排 |
+| 搜索 | Elasticsearch 关键词搜索、标签过滤、游标分页和搜索建议 |
+| 关注关系 | 关注/取关、关系状态、关注列表、粉丝列表、Redis 缓存与 Canal Outbox 同步 |
+| 互动计数 | 点赞、收藏、Redis 位图、Kafka 聚合、异常重建和计数读取 |
+| 排行榜 | 日榜/周榜/月榜等 Top 查询、用户排名、批量排名查询 |
+| 部署 | 本地一键 Docker Compose、离线发布包、HMAC 签名部署 hook |
 
 ## 技术栈
 
-| 类别 | 选型 |
-|------|------|
-| 语言与构建 | Java 21、Maven |
-| 框架 | Spring Boot 3.2.4、Spring Web、Validation、Actuator |
-| 安全 | Spring Security、OAuth2 Resource Server（JWT/RS256） |
-| AI | Spring AI 1.0.3（OpenAI 兼容嵌入、DeepSeek Chat）、Elasticsearch Vector Store |
-| 数据访问 | MyBatis 3、MySQL |
-| 搜索 | Elasticsearch 9.x（Java API Client） |
-| 缓存与分布式 | Redis、Caffeine；Redisson（分布式锁/限流/RateLimiter） |
-| 消息 | Apache Kafka（计数聚合、排行榜分数变更） |
-| 同步 | Alibaba Canal 客户端（Outbox 表 binlog 订阅） |
-| 对象存储 | 阿里云 OSS |
+| 层 | 技术 |
+| --- | --- |
+| 后端 | Java 21、Spring Boot 3.2、Spring Security、Spring AI、MyBatis、Maven |
+| 前端 | Next.js 16、React 19、TypeScript、Tailwind CSS、Radix UI、lucide-react |
+| 数据 | MySQL 8、Redis 7、Elasticsearch 9、Kafka、Canal |
+| AI | DeepSeek Chat、OpenAI 兼容 Embedding、Elasticsearch Vector Store |
+| 部署 | Docker、Docker Compose、Nginx、shell 发布脚本、Python deploy hook |
 
----
+## 目录结构
 
-## 架构要点（简图）
+```text
+.
+├── backend/                         # Spring Boot 后端工程
+│   ├── Dockerfile
+│   ├── pom.xml
+│   └── src/main/
+│       ├── java/com/tongji/         # 业务模块源码
+│       └── resources/               # application.yml、mapper、JWT keys、RAG prompts
+├── frontend/                        # Next.js 前端工程
+│   ├── app/                         # App Router 页面
+│   ├── components/                  # UI 与业务组件
+│   ├── lib/                         # API client、类型与工具函数
+│   └── public/                      # 静态资源
+├── deploy/
+│   ├── canal/                       # Canal instance 配置
+│   ├── elasticsearch/               # IK 插件与词典
+│   ├── hook/                        # 服务器部署 hook
+│   ├── mysql/schema.sql             # MySQL 初始化结构
+│   └── nginx/default.conf           # 前端与后端反向代理
+├── scripts/                         # 打包、上传、部署脚本
+├── docker-compose.yml               # 本地完整运行栈
+├── .env.example                     # 本地 Docker 环境模板
+├── .env.docker.example              # 服务器运行环境模板
+└── DEPLOY_DOCKER.md                 # Docker 发布和 hook 部署说明
+```
+
+## 架构
 
 ```mermaid
 flowchart LR
-  Client[Client / Frontend] --> API[Spring Boot API]
+  Browser[Browser] --> Nginx[Nginx]
+  Nginx --> Frontend[Next.js Frontend]
+  Nginx --> Backend[Spring Boot Backend]
 
-  subgraph App[Line / RuiWen Backend]
-    API --> Auth[Auth Module]
-    API --> Profile[Profile Module]
-    API --> KnowPost[KnowPost Module]
-    API --> Relation[Relation Module]
-    API --> Counter[Counter Module]
-    API --> Leaderboard[Leaderboard Module]
-    API --> Search[Search Module]
-    API --> Storage[Storage Module]
-    API --> LLM[RAG / AI Module]
-    API --> Cache[Cache Layer]
-  end
+  Backend --> MySQL[(MySQL)]
+  Backend --> Redis[(Redis)]
+  Backend --> Kafka[(Kafka)]
+  Backend --> ES[(Elasticsearch)]
+  Backend --> OSS[Aliyun OSS]
+  Backend --> LLM[DeepSeek / Embedding Provider]
 
-  Auth --> MySQL[(MySQL)]
-  Profile --> MySQL
-  KnowPost --> MySQL
-  Relation --> MySQL
-  Counter --> MySQL
-  Leaderboard --> MySQL
-  Search --> MySQL
-
-  API --> Redis[(Redis)]
-  Cache --> Redis
-  Relation --> Redis
-  KnowPost --> Redis
-  Leaderboard --> Redis
-  Counter --> Redis
-
-  API --> OSS[Aliyun OSS]
-  Storage --> OSS
-
-  API --> ES[(Elasticsearch)]
-  Search --> ES
-  LLM --> ES
-
-  API --> DeepSeek[DeepSeek / LLM Provider]
-  LLM --> DeepSeek
-
-  Counter --> Kafka[(Kafka)]
-  Kafka --> CounterConsumer[Counter Aggregation Consumer]
-  Kafka --> LeaderboardConsumer[Leaderboard Score Consumer]
-
-  MySQL --> Canal[Canal]
-  Canal --> OutboxConsumer[Canal Outbox Consumer]
-  OutboxConsumer --> Kafka
-  OutboxConsumer --> Relation[Relation Cache Update]
+  MySQL --> Canal[Canal Binlog]
+  Canal --> Outbox[Outbox Consumer]
+  Outbox --> Kafka
+  Kafka --> Counter[Counter Aggregation]
+  Kafka --> Leaderboard[Leaderboard Update]
 ```
 
-## 系统架构图
-
-![RuiWen Architecture](docs/ruiwen-professional-architecture.svg)
-
----
-
-## 运行前置条件
-
-本地或 Docker 中需就绪（端口与 `application.yml` 默认一致时可直连）：
-
-| 服务 | 默认说明 |
-|------|----------|
-| MySQL 8 | 示例配置中 JDBC 端口常为 `3309`（映射）或容器内 `3306`；库名 `ruiwen`，需开启 binlog（ROW）供 Canal |
-| Redis | `6379` |
-| Kafka | 宿主机 `9092`；Docker 网络内 broker 常为 `kafka:29092` |
-| Elasticsearch | 宿主机 `9201` 映射到容器 `9200`（以你本地 `application.yml` 为准） |
-| Canal | `11111`，destination 与 `canal.destination` 一致 |
-
-可选：`canal.enabled: false` 可关闭 Canal 相关逻辑（若你无需 Outbox 同步，需自行评估功能影响）。
-
----
-
-## 配置说明
-
-主配置：`src/main/resources/application.yml`。
-
-**务必通过环境变量或私密配置管理敏感信息**，不要将真实 API Key、OSS 密钥、数据库密码提交到仓库。可参考根目录 `.env.example` 与 `README-Docker.md` 中的 Docker 环境变量方式。
-
-| 配置域 | 含义 |
-|--------|------|
-| `spring.datasource.*` | MySQL 连接（HikariCP，50 最大连接） |
-| `spring.data.redis.*` | Redis（Lettuce 连接池，100 最大活跃） |
-| `spring.kafka.*` | Kafka 生产者/消费者（幂等生产者，手动 offset 提交） |
-| `spring.elasticsearch.uris` | ES 地址 |
-| `spring.ai.deepseek.*` | DeepSeek 聊天（`deepseek-v4-flash`，温度 0.8） |
-| `spring.ai.openai.*` | DashScope 嵌入（`text-embedding-v4`，1536 维度） |
-| `spring.ai.vectorstore.elasticsearch` | ES 向量索引配置 |
-| `canal.*` | Canal Server 地址、账号、表过滤等 |
-| `auth.jwt.*` | JWT 签发；密钥文件见 `classpath:keys/` |
-| `oss.*` | 阿里云 OSS |
-| `counter.*` | 计数重建：锁 TTL、限流参数、退避参数 |
-| `leaderboard.*` | 排行榜：TopN 容量、线段树范围、分桶大小、去重 TTL |
-| `cache.*` | 多级缓存：L1/L2 TTL/容量、热键窗口/分段/阈值/扩展秒数 |
-| `rag.*` | RAG：分块参数（token size/overlap/mode）、检索 topK、RRF k 值、精排开关、Prompt 上限 |
-
-**JWT 密钥**：在 `src/main/resources/keys/` 放置 RSA 密钥对 `private.pem`、`public.pem`（与 `auth.jwt` 配置一致）。
-
----
-
-## 本地运行
-
-1. 安装 **JDK 21**、**Maven 3.9+**，并启动上一节中的依赖服务。
-2. 复制并填写配置；生成或放入 JWT 用 PEM 密钥。
-3. 编译打包：
-
-```bash
-mvn clean package -DskipTests
-```
-
-4. 启动：
-
-```bash
-java -jar target/RuiWen-1.0-SNAPSHOT.jar
-```
-
-或在 IDE 中运行 `com.tongji.RuiWenApplication`。
-
-5. 健康检查（若未关闭 Actuator）：
-
-```bash
-curl http://localhost:8080/actuator/health
-```
-
-默认 HTTP 端口：**8080**（`server.port`）。
-
----
-
-## Docker
-
-- **依赖栈**：`docs/docker-compose.yml`（MySQL、Redis、Kafka、Elasticsearch、Canal、Kafka UI 等）。
-- **应用镜像**：根目录 `Dockerfile` 多阶段构建；`docker-compose.app.yml` 仅编排应用容器。
-
-一键示例（PowerShell，详见 `README-Docker.md`）：
-
-```powershell
-Copy-Item .\.env.example .\.env
-docker compose --env-file .\.env -f .\docs\docker-compose.yml -f .\docker-compose.app.yml up -d --build
-```
-
-容器网络内请使用 **`kafka:29092`** 连接 Kafka，而不是 `localhost:9092`。
-
----
-
-## 代码模块
+后端主要模块位于 `backend/src/main/java/com/tongji`：
 
 | 包 | 职责 |
-|----|------|
-| `auth` | 认证、JWT（RS256）、验证码（Redis 存储，支持阿里云/过龙/日志多通道）、安全配置、登录审计 |
-| `profile` | 用户资料 PATCH、头像上传封装 |
-| `knowpost` | 知文 API（草稿/发布/元数据/删除）、Feed 服务（三级缓存/单航班/热键 TTL）、AI 描述生成 |
-| `search` | ES 关键词检索（function_score 加权）、游标分页（search_after）、Completion 联想建议 |
-| `relation` | 关注服务（Lua 限流/ZSet 分页/Caffeine 本地缓存/Canal Outbox）、关系状态 |
-| `counter` | 计数服务（Redis 位图原子切换/SDS 汇总/Kafka 聚合/位图分片重建/退避防风暴）、行为 API |
-| `leaderboard` | 排行榜查询（Top 分页/用户排名/批量查询）、分数变更 Kafka 消费、线段树粗估 |
-| `storage` | 阿里云 OSS 预签名 PUT URL 生成 |
-| `llm` | 嵌入（DashScope text-embedding-v4）、RAG 混合检索（向量+BM25+RRF）、语义缓存、语义分块（Markdown 感知/LLM 增强）、精排（Reranker）、流式问答、Prompt 模板 |
-| `cache` | 缓存配置（Caffeine L1 + Redis L2）、热键探测器（滑动窗口/热度分级/动态 TTL 扩展） |
+| --- | --- |
+| `auth` | 安全配置、JWT、验证码、注册登录、刷新令牌、登录审计 |
+| `profile` | 用户资料与头像信息 |
+| `knowpost` | 知文草稿、发布、详情、Feed、缓存失效与 AI 描述 |
+| `llm` | RAG 检索、语义缓存、Embedding、Prompt、Markdown 切分和流式问答 |
+| `search` | Elasticsearch 索引、搜索和建议 |
+| `relation` | 关注关系、关系缓存、Outbox 事件处理 |
+| `counter` | 点赞/收藏状态、计数聚合、位图重建 |
+| `leaderboard` | 排行榜读写、批量排名和 Kafka 消费 |
+| `storage` | OSS 预签名上传 |
+| `cache` | Caffeine 与 Redis 缓存配置、热 key 探测 |
 
-**主要 API 前缀**：
+## 快速启动
+
+推荐优先用 Docker Compose 跑完整环境。
+
+```bash
+cp .env.example .env
+mkdir -p certs/nginx
+# 将 line68.cn_bundle.crt 和 line68.cn.key 放入 certs/nginx/
+docker compose --env-file .env up -d --build
+```
+
+默认入口：
+
+| 服务 | 地址 |
+| --- | --- |
+| 前端 | `https://localhost` |
+| 后端 | `http://localhost:8080` |
+| MySQL | `127.0.0.1:3306` |
+| Redis | `127.0.0.1:6379` |
+| Kafka | `127.0.0.1:9092` |
+| Elasticsearch | `http://127.0.0.1:9201` |
+
+Nginx 配置会把 HTTP 重定向到 HTTPS，并要求以下证书文件存在：
+
+```text
+certs/nginx/line68.cn_bundle.crt
+certs/nginx/line68.cn.key
+```
+
+本地仅调试前后端时，也可以跳过 Nginx，分别启动后端和前端开发服务。
+
+## 本地开发
+
+### 依赖服务
+
+可以只启动基础依赖：
+
+```bash
+cp .env.example .env
+docker compose --env-file .env up -d mysql redis kafka elasticsearch canal
+```
+
+Kafka UI 是可选工具：
+
+```bash
+docker compose --env-file .env --profile tools up -d kafka-ui
+```
+
+### 后端
+
+```bash
+cd backend
+mvn spring-boot:run
+```
+
+常用配置来自 `backend/src/main/resources/application.yml`，并支持用环境变量覆盖。关键环境变量包括：
+
+| 变量 | 说明 |
+| --- | --- |
+| `SPRING_DATASOURCE_URL`、`DB_USERNAME`、`DB_PASSWORD` | MySQL 连接 |
+| `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` | Redis 连接 |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka 地址 |
+| `ELASTICSEARCH_URIS` | Elasticsearch 地址 |
+| `DEEPSEEK_API_KEY` | DeepSeek Chat API Key |
+| `OPENAI_API_KEY`、`OPENAI_BASE_URL` | OpenAI 兼容 Embedding 服务 |
+| `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_BUCKET` | 阿里云 OSS |
+| `CANAL_ENABLED`、`CANAL_HOST`、`CANAL_DESTINATION` | Canal 同步 |
+
+JWT 密钥默认读取：
+
+```text
+backend/src/main/resources/keys/private.pem
+backend/src/main/resources/keys/public.pem
+```
+
+### 前端
+
+```bash
+cd frontend
+npm install
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 npm run dev
+```
+
+开发服务默认地址：`http://localhost:3000`。
+
+主要页面：
+
+| 路径 | 页面 |
+| --- | --- |
+| `/login`、`/register`、`/reset-password` | 认证流程 |
+| `/app` | 应用首页 |
+| `/app/posts/create` | 知文创作 |
+| `/app/posts/[id]` | 知文详情 |
+| `/app/qa` | RAG 问答 |
+| `/app/search` | 搜索 |
+| `/app/leaderboard` | 排行榜 |
+| `/app/profile`、`/app/profile/[userId]`、`/app/profile/edit` | 个人资料 |
+
+## 常用命令
+
+后端：
+
+```bash
+cd backend
+mvn test
+mvn clean package
+```
+
+前端：
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+Docker：
+
+```bash
+docker compose --env-file .env ps
+docker compose --env-file .env logs -f backend
+docker compose --env-file .env logs -f frontend
+docker compose --env-file .env down
+```
+
+## API 前缀
 
 | 前缀 | 说明 |
-|------|------|
-| `/api/auth` | 认证（注册/登录/登出/刷新/重置密码/发送验证码） |
-| `/api/profile` | 资料编辑与头像上传 |
-| `/api/knowposts` | 知文 CRUD、Feed、AI 描述、RAG 问答、热点问题、索引重建 |
-| `/api/search` | 关键词检索、联想建议 |
-| `/api/relation` | 关注/取关、关系状态、关注/粉丝列表 |
+| --- | --- |
+| `/api/auth` | 注册、登录、刷新、登出、验证码、重置密码 |
+| `/api/profile` | 用户资料 |
+| `/api/knowposts` | 知文、Feed、AI 描述、单篇 RAG |
+| `/api/rag` | 全局 RAG |
+| `/api/search` | 搜索与建议 |
+| `/api/relation` | 关注关系 |
+| `/api/action` | 点赞、收藏等用户动作 |
 | `/api/counter` | 计数读取 |
-| `/api/action` | 点赞/取消点赞、收藏/取消收藏 |
-| `/api/leaderboards` | Top 榜、用户排名、批量排名查询 |
-| `/api/storage` | OSS 预签名上传 URL |
-| `/api/rag` | 全局 RAG 问答 |
+| `/api/leaderboards` | 排行榜 |
+| `/api/storage` | OSS 预签名上传 |
+| `/actuator` | Spring Boot 运行状态 |
 
----
+鉴权规则由 `backend/src/main/java/com/tongji/auth/config/SecurityConfig.java` 控制。默认除公开认证、公开 Feed/详情、部分问答和排行榜接口外，其余接口需要携带 JWT。
 
-## 核心设计说明
+## 发布部署
 
-### Feed 三级缓存
+### 构建离线发布包
 
-公共 Feed 采用本地 Caffeine → Redis 页面缓存 → Redis 分片缓存三层结构：
+```bash
+scripts/package_docker_release.sh 20260702
+```
 
-- **本地 Caffeine**：进程内缓存，按 `page:size` Key 缓存完整 `FeedPageResponse`，读取最近被访问的 Key 动态延长 TTL（热键保护）。
-- **Redis 页面缓存**：完整页面 JSON，TTL 10~20s（含随机抖动避免雪崩）。
-- **Redis 分片缓存**：按小时分片缓存 ID 列表、知文条目、计数、hasMore 软缓存；TTL 60~90s。
-- **单航班（Singleflight）**：同一 `idsKey` 的并发请求共用一把 synchronized 锁，避免击穿。
-- **内容更新失效**：维护内容→页面的反向索引（Set），内容变更时精准失效受影响页面。
+输出：
 
-### 计数服务（位图 + SDS + Kafka 聚合）
+```text
+dist/docker-release/ruiwen-20260702/
+dist/docker-release/ruiwen-release-20260702.tgz
+```
 
-- **位图（Bitmap）**：用户维度行为（点赞/收藏）以 `userId` 哈希分片写入 Redis 位图，`SETBIT` 原子切换，Lua 脚本确保幂等。
-- **SDS 汇总**：计数快照以固定长度字节数组（`field_size=4`）大端存储，`AGG` 聚合增量每 1s 折叠到 SDS。
-- **位图分片重建**：SDS 结构异常或采样校验失败时，以 Redis 分片位图的 `BITCOUNT` 求和重建，加 Redisson 分布式锁 + 限流 + 指数退避防止重建风暴。
-- **Kafka 聚合**：计数事件按实体维度分区，保证同实体事件顺序。
+发布包包含后端镜像、前端镜像和运行配置，不包含 `.env`、`.env.docker`、`.env.deploy` 等私密文件。
 
-### 关系服务（Outbox + ZSet + 大V缓存）
+### 服务器首次启动
 
-- **关注/取关**：事务入库后写入 Outbox 表（Canal 订阅），Outbox 消费者消费后更新粉丝表与 Redis ZSet。
-- **Redis ZSet 分页**：关注/粉丝列表以 `userId` 为 Key、关注时间戳为分数，支持偏移分页与游标分页两种方式。
-- **大V本地缓存**：粉丝数 ≥50 万的用户，在 Caffeine 缓存前 500 粉丝 ID，降低大V用户的冷启动回源。
-- **Lua 令牌桶限流**：关注操作通过 Redis Lua 脚本实现令牌桶（100 容量/1 速率），防止刷关。
+```bash
+tar -xzf ruiwen-release-20260702.tgz
+cd ruiwen-20260702
+docker load -i ruiwen-images-20260702.tar
+cp .env.docker.example .env.docker
+mkdir -p certs/nginx
+# 填写 .env.docker，并放入 Nginx TLS 证书
+docker compose --env-file .env.docker up -d
+```
 
-### RAG 问答（混合检索 + 语义缓存 + 流式生成）
+### 部署 hook
 
-完整链路：
+打包 hook：
 
-1. **语义缓存检查**：将用户提问转为 1536 维向量，余弦相似度 >0.98 命中时直接返回缓存答案（7 天 TTL）。
-2. **混合检索**：`text-embedding-v4` 向量检索 + ES BM25 关键词检索，各自召回 Top 20，通过 **RRF（Reciprocal Rank Fusion）** 融合排序。
-3. **语义分块**（索引时）：Markdown 结构感知切分（`MarkdownBlockParser` + `MarkdownSectionMerger`），支持纯规则（rule）或 LLM 增强（llm）两种模式，默认 chunk_size=500 tokens、overlap=50 tokens。
-4. **Prompt 组装**：将 Top N Chunk 注入 System/User Prompt，控制最终送入 LLM 的 Chunk 数量（默认 5）。
-5. **流式生成**：DeepSeek `deepseek-v4-flash` 流式输出 SSE，答题过程中边收集片段、流结束后异步回写语义缓存。
-6. **Reranker 精排**（可选）：RRF 后的候选送入 BGE-Reranker 等精排模型重排序。
+```bash
+scripts/package_deploy_hook.sh latest
+```
 
-### 热键探测器
+本地签名上传并触发服务器部署：
 
-滑动时间窗口分段计数器（`windowSeconds=60 / segmentSeconds=10`，共 6 段），按总热度映射到 NONE/LOW/MEDIUM/HIGH 四级，影响 Feed 页面缓存的动态 TTL 扩展秒数（LOW+20s、MEDIUM+60s、HIGH+120s）。
+```bash
+cp .env.deploy.example .env.deploy
+# 填写 DEPLOY_SECRET 和 DEPLOY_HOOK_URL
+scripts/deploy_release_hook.sh 20260702
+```
 
-### Canal Outbox 模式
+完整说明见 [DEPLOY_DOCKER.md](DEPLOY_DOCKER.md)。
 
-MySQL `outbox` 表记录关注/取关事件，Canal 订阅 binlog 将变更写入 Kafka，`CanalOutboxConsumer` 消费后交由 `RelationEventProcessor` 更新粉丝表与 Redis 缓存，保证关系数据最终一致性。
+## 安全与配置约定
 
----
-
-## 许可证与声明
-
-若对外分发，请自行补充许可证条款。生产环境请关闭或保护 Actuator 敏感端点，收紧 CORS，并为所有第三方密钥使用密钥托管或环境注入。
+- `.env`、`.env.docker`、`.env.deploy` 和真实证书不应提交到仓库。
+- `.env.example` 与 `.env.docker.example` 只作为模板，生产环境应替换数据库、Redis、Canal、JWT、OSS 和 AI 服务相关密钥。
+- Nginx TLS 文件放在 `certs/nginx/`，发布包内只保留目录说明。
+- Docker 网络内后端连接 Kafka 使用 `kafka:29092`，宿主机访问 Kafka 使用 `127.0.0.1:9092` 或 `.env` 中配置的外部地址。
+- RAG 的向量维度必须与 `OPENAI_EMBEDDING_DIMENSIONS` 和 Elasticsearch vector store 配置保持一致。
