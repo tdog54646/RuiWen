@@ -1,0 +1,21 @@
+name: ruiwen-deploy-hook
+
+services:
+  deploy-hook:
+    image: ${DEPLOY_HOOK_IMAGE:-ruiwen-deploy-hook}:${DEPLOY_HOOK_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${DEPLOY_HOOK_BIND:-0.0.0.0}:${DEPLOY_HOOK_PORT:-8989}:8989"
+    environment:
+      DEPLOY_SECRET: ${DEPLOY_SECRET:?set DEPLOY_SECRET}
+      DEPLOY_BIND: 0.0.0.0
+      DEPLOY_PORT: 8989
+      RUIWEN_DIR: /opt/ruiwen
+      RELEASES_DIR: /opt/ruiwen/releases
+      SIGNATURE_TTL_SECONDS: ${SIGNATURE_TTL_SECONDS:-600}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-4294967296}
+      KEEP_RELEASES: ${KEEP_RELEASES:-3}
+      DEPLOY_SERVICES: ${DEPLOY_SERVICES:-backend frontend nginx}
+    volumes:
+      - /opt/ruiwen:/opt/ruiwen
+      - /var/run/docker.sock:/var/run/docker.sock

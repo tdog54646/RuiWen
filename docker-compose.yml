@@ -1,0 +1,190 @@
+name: ruiwen
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.0}
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-7By6JOUx6gM0MJTSAW35YJZ4s3fAhEbRlFq8smszmE6wsFjf}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ruiwen}
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --server-id=1
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./deploy/mysql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "${MYSQL_BIND:-127.0.0.1}:${MYSQL_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.2-alpine}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-DLlmjIqnQ5YZCdXc3NfBHalC6mRMihq7vO98n4rWehKOIfqF}
+      TZ: ${TZ:-Asia/Shanghai}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: ${KAFKA_IMAGE:-apache/kafka:3.7.0}
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://${KAFKA_EXTERNAL_HOST:-localhost}:${KAFKA_PORT:-9092},INTERNAL://kafka:29092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-4L62no9pSFm676Y8v_A9LA}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "${KAFKA_BIND:-127.0.0.1}:${KAFKA_PORT:-9092}:9092"
+
+  elasticsearch:
+    image: ${ELASTICSEARCH_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:9.2.1}
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+      - ./deploy/elasticsearch/plugins/ik:/usr/share/elasticsearch/plugins/ik:ro
+    ports:
+      - "${ELASTICSEARCH_BIND:-127.0.0.1}:${ELASTICSEARCH_PORT:-9201}:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  canal:
+    image: ${CANAL_IMAGE:-canal/canal-server:v1.1.7}
+    platform: ${CANAL_PLATFORM:-linux/amd64}
+    restart: unless-stopped
+    environment:
+      CANAL_DESTINATIONS: ${CANAL_DESTINATION:-example}
+      TZ: ${TZ:-Asia/Shanghai}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - canal_logs:/home/admin/canal-server/logs
+      - ./deploy/canal/conf/example/instance.properties:/home/admin/canal-server/conf/example/instance.properties:ro
+    ports:
+      - "${CANAL_BIND:-127.0.0.1}:${CANAL_PORT:-11111}:11111"
+
+  backend:
+    image: ${BACKEND_IMAGE:-ruiwen-backend}:${IMAGE_TAG:-latest}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ruiwen}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-7By6JOUx6gM0MJTSAW35YJZ4s3fAhEbRlFq8smszmE6wsFjf}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-DLlmjIqnQ5YZCdXc3NfBHalC6mRMihq7vO98n4rWehKOIfqF}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ELASTICSEARCH_URIS: http://elasticsearch:9200
+      CANAL_HOST: canal
+      CANAL_PORT: 11111
+      TZ: ${TZ:-Asia/Shanghai}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+      canal:
+        condition: service_started
+    ports:
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8080}:8080"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ruiwen-frontend}:${IMAGE_TAG:-latest}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8080}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8080}
+      TZ: ${TZ:-Asia/Shanghai}
+    depends_on:
+      backend:
+        condition: service_started
+    expose:
+      - "3000"
+
+  nginx:
+    image: ${NGINX_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs/nginx:/etc/nginx/certs:ro
+    ports:
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_HTTPS_PORT:-443}:443"
+
+  kafka-ui:
+    image: ${KAFKA_UI_IMAGE:-provectuslabs/kafka-ui:latest}
+    profiles:
+      - tools
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTERS_0_NAME: ruiwen-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      TZ: ${TZ:-Asia/Shanghai}
+    depends_on:
+      kafka:
+        condition: service_started
+    ports:
+      - "${KAFKA_UI_BIND:-127.0.0.1}:${KAFKA_UI_PORT:-18080}:8080"
+
+volumes:
+  mysql_data:
+  redis_data:
+  kafka_data:
+  elasticsearch_data:
+  canal_logs:
