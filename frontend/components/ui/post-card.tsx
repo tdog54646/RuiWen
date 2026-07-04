@@ -3,12 +3,11 @@
 import { useRef, useState, useEffect } from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { MoreHorizontal, Pin, Globe, Lock, Trash2 } from "lucide-react"
+import { MoreHorizontal, Pin, Globe, Lock, Trash2, Pencil } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
 import { knowpostService } from "@/lib/api/knowpost"
 import type { VisibleScope } from "@/lib/types/knowpost"
 import { UserAvatar } from "./user-avatar"
-import { cn } from "@/lib/utils"
 
 export type PostCardProps = {
   id: string
@@ -213,6 +212,14 @@ export function PostCard({
                 <Lock className="size-3.5" />
                 设为私密
               </button>
+              <Link
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm hover:bg-muted"
+                href={`/app/posts/create?editId=${id}`}
+                onClick={() => setMenuOpen(false)}
+              >
+                <Pencil className="size-3.5" />
+                修改
+              </Link>
               <div className="my-1 h-px bg-border" />
               <button
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-destructive hover:bg-destructive/10"

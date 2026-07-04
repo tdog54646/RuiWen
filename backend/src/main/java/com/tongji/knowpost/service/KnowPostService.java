@@ -13,6 +13,10 @@ public interface KnowPostService {
 
     void confirmContent(long creatorId, long id, String objectKey, String etag, Long size, String sha256);
 
+    void updatePost(long creatorId, long id, String objectKey, String etag, Long size, String sha256,
+                    String title, Long tagId, List<String> tags, List<String> imgUrls,
+                    String visible, Boolean isTop, String description);
+
     void updateMetadata(long creatorId, long id, String title, Long tagId, List<String> tags, List<String> imgUrls, String visible, Boolean isTop, String description);
 
     void publish(long creatorId, long id);

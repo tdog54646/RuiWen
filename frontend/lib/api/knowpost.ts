@@ -4,6 +4,7 @@ import type {
   PresignRequest,
   PresignResponse,
   ConfirmContentRequest,
+  EditKnowPostRequest,
   UpdateKnowPostRequest,
   FeedResponse,
   KnowpostDetailResponse,
@@ -38,6 +39,12 @@ export const knowpostService = {
   update: (id: string, payload: UpdateKnowPostRequest) =>
     apiFetch<void>(`${KNOWPOST_PREFIX}/${id}`, {
       method: "PATCH",
+      body: payload,
+    }),
+
+  saveEdit: (id: string, payload: EditKnowPostRequest) =>
+    apiFetch<void>(`${KNOWPOST_PREFIX}/${id}`, {
+      method: "PUT",
       body: payload,
     }),
 
@@ -167,6 +174,12 @@ export function ensureHttps(url: string): string {
     return url.replace("http://", "https://")
   }
   return url
+}
+
+export function withCacheBuster(url: string): string {
+  const normalized = ensureHttps(url)
+  const separator = normalized.includes("?") ? "&" : "?"
+  return `${normalized}${separator}_rwv=${Date.now()}`
 }
 
 export async function uploadToPresigned(

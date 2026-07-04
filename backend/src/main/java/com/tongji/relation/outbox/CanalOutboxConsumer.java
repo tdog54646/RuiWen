@@ -51,14 +51,25 @@ public class CanalOutboxConsumer {
                 if (payloadNode == null) {
                     continue;
                 }
-                //TODO 统一outbox内payload内容
+
                 JsonNode payload = objectMapper.readTree(payloadNode.asText());
-                String entity = text(payload.get("entity"));
-                if ("knowpost".equals(entity) ) {
-                    continue;
+                RelationEvent evt;
+                if (isUnifiedPayload(payload)) {
+                    if (!"following".equals(text(payload.get("aggregateType")))) {
+                        continue;
+                    }
+                    JsonNode data = payload.get("data");
+                    if (data == null || data.isNull()) {
+                        continue;
+                    }
+                    evt = objectMapper.treeToValue(data, RelationEvent.class);
+                } else {
+                    String entity = text(payload.get("entity"));
+                    if ("knowpost".equals(entity)) {
+                        continue;
+                    }
+                    evt = objectMapper.readValue(payloadNode.asText(), RelationEvent.class);
                 }
-                
-                RelationEvent evt = objectMapper.readValue(payloadNode.asText(), RelationEvent.class);
                 processor.process(evt);
             }
             ack.acknowledge();
@@ -73,5 +84,11 @@ public class CanalOutboxConsumer {
     private String text(JsonNode n) {
         return n == null ? null : n.asText();
     }
-}
 
+    private boolean isUnifiedPayload(JsonNode payload) {
+        return payload != null
+                && payload.has("aggregateType")
+                && payload.has("eventType")
+                && payload.has("data");
+    }
+}

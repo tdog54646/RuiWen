@@ -9,7 +9,7 @@ import { MarkdownRenderer } from "@/components/ui/markdown-renderer"
 import { UserAvatar } from "@/components/ui/user-avatar"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth/auth-context"
-import { knowpostService } from "@/lib/api/knowpost"
+import { knowpostService, withCacheBuster } from "@/lib/api/knowpost"
 import { qaService } from "@/lib/api/qa"
 import type { KnowpostDetailResponse } from "@/lib/types/knowpost"
 import { X, ChevronLeft, ChevronRight, Bot, Send, Loader2 } from "lucide-react"
@@ -46,7 +46,7 @@ export default function PostDetailPage() {
         setDetail(resp)
         if (resp.contentUrl) {
           try {
-            const text = await fetch(resp.contentUrl, {
+            const text = await fetch(withCacheBuster(resp.contentUrl), {
               credentials: "omit",
             }).then((r) => {
               if (!r.ok) throw new Error(`HTTP ${r.status}`)

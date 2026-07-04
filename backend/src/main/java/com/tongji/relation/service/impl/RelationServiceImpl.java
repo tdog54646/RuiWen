@@ -1,12 +1,11 @@
 package com.tongji.relation.service.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.tongji.profile.api.dto.ProfileResponse;
 import com.tongji.relation.event.RelationEvent;
 import com.tongji.relation.mapper.RelationMapper;
-import com.tongji.relation.outbox.OutboxMapper;
+import com.tongji.relation.outbox.OutboxService;
 import com.tongji.relation.service.RelationService;
 import com.tongji.user.domain.User;
 import com.tongji.user.mapper.UserMapper;
@@ -34,10 +33,9 @@ import java.util.function.IntFunction;
 @Service
 public class RelationServiceImpl implements RelationService {
     private final RelationMapper mapper;
-    private final OutboxMapper outboxMapper;
+    private final OutboxService outboxService;
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> tokenScript;
-    private final ObjectMapper objectMapper;
     private final Cache<Long, List<Long>> flwsTopCache;
     private final Cache<Long, List<Long>> fansTopCache;
     private final UserMapper userMapper;
@@ -46,19 +44,16 @@ public class RelationServiceImpl implements RelationService {
     /**
      * 关系服务实现构造函数。
      * @param mapper 关系表数据访问
-     * @param outboxMapper Outbox 事件写入访问
+     * @param outboxService Outbox 事件写入服务
      * @param redis Redis 客户端
-     * @param objectMapper JSON 序列化器
      */
     public RelationServiceImpl(RelationMapper mapper,
-                               OutboxMapper outboxMapper,
+                               OutboxService outboxService,
                                StringRedisTemplate redis,
-                               ObjectMapper objectMapper,
                                UserMapper userMapper) {
         this.mapper = mapper;
-        this.outboxMapper = outboxMapper;
+        this.outboxService = outboxService;
         this.redis = redis;
-        this.objectMapper = objectMapper;
         this.tokenScript = new DefaultRedisScript<>();
         this.tokenScript.setResultType(Long.class);
         this.tokenScript.setScriptText(TOKEN_BUCKET_LUA);
@@ -87,9 +82,8 @@ public class RelationServiceImpl implements RelationService {
 
         if (inserted > 0) {
             try {
-                Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
-                String payload = objectMapper.writeValueAsString(new RelationEvent("FollowCreated", fromUserId, toUserId, id));
-                outboxMapper.insert(outId, "following", id, "FollowCreated", payload);
+                outboxService.insert("following", id, "FollowCreated",
+                        new RelationEvent("FollowCreated", fromUserId, toUserId, id));
             } catch (Exception ignored) {}
 
             return true;
@@ -109,9 +103,8 @@ public class RelationServiceImpl implements RelationService {
         int updated = mapper.cancelFollowing(fromUserId, toUserId);
         if (updated > 0) {
             try {
-                Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
-                String payload = objectMapper.writeValueAsString(new RelationEvent("FollowCanceled", fromUserId, toUserId, null));
-                outboxMapper.insert(outId, "following", null, "FollowCanceled", payload);
+                outboxService.insert("following", null, "FollowCanceled",
+                        new RelationEvent("FollowCanceled", fromUserId, toUserId, null));
             } catch (Exception ignored) {}
             return true;
         }

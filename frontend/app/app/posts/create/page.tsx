@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useRef, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { TagInput } from "@/components/ui/tag-input"
 import { SlideButton } from "@/components/ui/slide-button"
 import { Button } from "@/components/ui/button"
@@ -13,6 +14,7 @@ import {
   uploadToPresigned,
   computeSha256,
   ensureHttps,
+  withCacheBuster,
 } from "@/lib/api/knowpost"
 import { X } from "lucide-react"
 import dynamic from "next/dynamic"
@@ -32,14 +34,35 @@ const DynamicEditor = dynamic(
 type UploadedImage = {
   ossUrl: string
   previewUrl: string
+  localPreview?: boolean
 }
 
 export default function CreatePage() {
+  return (
+    <Suspense
+      fallback={(
+        <div className="flex flex-col gap-2 rounded-2xl bg-background/90 p-6 shadow-sm">
+          <h1 className="text-2xl font-bold tracking-tight">创建新内容</h1>
+          <p className="text-sm text-muted-foreground">加载中…</p>
+        </div>
+      )}
+    >
+      <CreatePageContent />
+    </Suspense>
+  )
+}
+
+function CreatePageContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const editId = searchParams.get("editId")
+  const isEditMode = Boolean(editId)
   const { tokens, isLoading } = useAuth()
   const [tags, setTags] = useState<string[]>([])
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [visiblePublic, setVisiblePublic] = useState(true)
+  const [isTop, setIsTop] = useState(false)
   const [summary, setSummary] = useState("")
   const [aiSummaryEnabled, setAiSummaryEnabled] = useState(false)
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
@@ -48,16 +71,71 @@ export default function CreatePage() {
   const [error, setError] = useState<string | null>(null)
   const [postId, setPostId] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [editLoading, setEditLoading] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [imageUploading, setImageUploading] = useState(false)
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
   const MAX_IMAGES = 15
 
+  useEffect(() => {
+    if (!editId || !tokens?.accessToken) return
+
+    let cancelled = false
+    setEditLoading(true)
+    setError(null)
+    setMessage(null)
+    setPostId(editId)
+
+    knowpostService
+      .detail(editId, tokens.accessToken)
+      .then(async (resp) => {
+        if (cancelled) return
+        setTitle(resp.title ?? "")
+        setTags(resp.tags ?? [])
+        setSummary(resp.description ?? "")
+        setVisiblePublic(resp.visible === "public")
+        setIsTop(Boolean(resp.isTop))
+        setUploadedImages(
+          (resp.images ?? []).map((url) => ({
+            ossUrl: ensureHttps(url),
+            previewUrl: ensureHttps(url),
+          })),
+        )
+        if (resp.contentUrl) {
+          const text = await fetch(withCacheBuster(resp.contentUrl), {
+            credentials: "omit",
+          }).then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`)
+            return r.text()
+          })
+          if (!cancelled) setContent(text)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "加载知文失败")
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setEditLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [editId, tokens?.accessToken])
+
+  const pageTitle = isEditMode ? "修改知文" : "创建新内容"
+  const pageSubtitle = isEditMode ? "继续完善这篇知文" : "分享你的知识，让更多人受益"
+  const loginNext = isEditMode && editId
+    ? `/app/posts/create?editId=${editId}`
+    : "/app/posts/create"
+
   if (isLoading) {
     return (
       <div className="flex flex-col gap-2 rounded-2xl bg-background/90 p-6 shadow-sm">
-        <h1 className="text-2xl font-bold tracking-tight">创建新内容</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
         <p className="text-sm text-muted-foreground">正在检查登录状态…</p>
       </div>
     )
@@ -67,14 +145,14 @@ export default function CreatePage() {
     return (
       <div className="flex flex-col gap-6 rounded-2xl bg-background/90 p-6 shadow-sm">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">创建新内容</h1>
-          <p className="text-sm text-muted-foreground">分享你的知识，让更多人受益</p>
+          <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
+          <p className="text-sm text-muted-foreground">{pageSubtitle}</p>
         </div>
 
         <section className="rounded-xl border p-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">登录后可创作并发布内容</p>
-            <Link href="/login?next=/app/posts/create">
+            <p className="text-sm text-muted-foreground">登录后可继续操作</p>
+            <Link href={`/login?next=${encodeURIComponent(loginNext)}`}>
               <Button size="sm">去登录</Button>
             </Link>
           </div>
@@ -83,7 +161,25 @@ export default function CreatePage() {
     )
   }
 
+  if (isEditMode && editLoading) {
+    return (
+      <div className="flex flex-col gap-6 rounded-2xl bg-background/90 p-6 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
+          <p className="text-sm text-muted-foreground">{pageSubtitle}</p>
+        </div>
+        <div className="rounded-xl border p-4 text-sm text-muted-foreground">
+          加载中…
+        </div>
+      </div>
+    )
+  }
+
   const ensureDraft = async (): Promise<string> => {
+    if (editId) {
+      setPostId(editId)
+      return editId
+    }
     if (postId) return postId
     const resp = await knowpostService.createDraft()
     const idStr = String(resp.id)
@@ -119,7 +215,7 @@ export default function CreatePage() {
         await uploadToPresigned(presign.putUrl, presign.headers, f)
         const ossUrl = ensureHttps(presign.putUrl).split("?")[0]
         const localPreview = URL.createObjectURL(f)
-        setUploadedImages((prev) => [...prev, { ossUrl, previewUrl: localPreview }])
+        setUploadedImages((prev) => [...prev, { ossUrl, previewUrl: localPreview, localPreview: true }])
       }
       const ignored = allSelected.length - arr.length
       setMessage(
@@ -136,7 +232,7 @@ export default function CreatePage() {
   const removeImage = (index: number) => {
     setUploadedImages((prev) => {
       const removed = prev[index]
-      if (removed) URL.revokeObjectURL(removed.previewUrl)
+      if (removed?.localPreview) URL.revokeObjectURL(removed.previewUrl)
       return prev.filter((_, i) => i !== index)
     })
   }
@@ -175,13 +271,30 @@ export default function CreatePage() {
         presign.headers,
         file,
       )
+      const imgUrls = uploadedImages.map((img) => img.ossUrl)
+      if (isEditMode) {
+        await knowpostService.saveEdit(id, {
+          objectKey: presign.objectKey,
+          etag,
+          size,
+          sha256,
+          title: title.trim(),
+          tags,
+          imgUrls,
+          visible: visiblePublic ? "public" : "private",
+          isTop,
+          description: summary.trim(),
+        })
+        setMessage("保存成功")
+        router.push(`/app/posts/${id}`)
+        return true
+      }
       await knowpostService.confirmContent(id, {
         objectKey: presign.objectKey,
         etag,
         size,
         sha256,
       })
-      const imgUrls = uploadedImages.map((img) => img.ossUrl)
       await knowpostService.update(id, {
         title: title.trim(),
         tags: tags.length ? tags : undefined,
@@ -194,7 +307,7 @@ export default function CreatePage() {
       setMessage("发布成功 ✅")
       return true
     } catch (err) {
-      setError(err instanceof Error ? err.message : "发布失败")
+      setError(err instanceof Error ? err.message : isEditMode ? "保存失败" : "发布失败")
       return false
     } finally {
       setSubmitting(false)
@@ -235,8 +348,8 @@ export default function CreatePage() {
   return (
     <div className="flex flex-col gap-6 rounded-2xl bg-background/90 p-6 shadow-sm">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">创建新内容</h1>
-        <p className="text-sm text-muted-foreground">分享你的知识，让更多人受益</p>
+        <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
+        <p className="text-sm text-muted-foreground">{pageSubtitle}</p>
       </div>
 
       <div className="flex flex-col gap-6">
@@ -306,9 +419,10 @@ export default function CreatePage() {
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="content">内容正文 *</Label>
             <DynamicEditor
-                initialValue={content}
-                onChange={(val) => setContent(val)}
-              />
+              key={isEditMode ? `edit-${editId}` : "create"}
+              initialValue={content}
+              onChange={(val) => setContent(val)}
+            />
           </div>
 
           <div className="space-y-2 md:col-span-2">
@@ -380,16 +494,16 @@ export default function CreatePage() {
             onSlideComplete={async () => {
               const ok = await handlePublish()
               if (!ok) {
-                throw new Error("发布失败")
+                throw new Error(isEditMode ? "保存失败" : "发布失败")
               }
             }}
             disabled={submitting || imageUploading}
             resetOnSuccessMs={1500}
-            idleText="滑动发布"
-            loadingText="发布中"
-            successText="已发布"
-            errorText="重试发布"
-            aria-label={submitting ? "发布中" : "滑动发布"}
+            idleText={isEditMode ? "滑动保存" : "滑动发布"}
+            loadingText={isEditMode ? "保存中" : "发布中"}
+            successText={isEditMode ? "已保存" : "已发布"}
+            errorText={isEditMode ? "重试保存" : "重试发布"}
+            aria-label={submitting ? (isEditMode ? "保存中" : "发布中") : (isEditMode ? "滑动保存" : "滑动发布")}
           />
         </div>
         {error && (

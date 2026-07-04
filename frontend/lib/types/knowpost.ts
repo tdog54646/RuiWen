@@ -35,6 +35,10 @@ export type UpdateKnowPostRequest = {
   description?: string
 }
 
+export type EditKnowPostRequest = ConfirmContentRequest & UpdateKnowPostRequest & {
+  title: string
+}
+
 export type FeedItem = {
   id: string
   title: string

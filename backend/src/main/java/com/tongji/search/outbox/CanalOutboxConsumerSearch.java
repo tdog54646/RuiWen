@@ -2,6 +2,7 @@ package com.tongji.search.outbox;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tongji.llm.rag.index.RagIndexService;
 import com.tongji.relation.outbox.OutboxTopics;
 import com.tongji.search.index.SearchIndexService;
 import com.tongji.util.OutboxMessageUtil;
@@ -21,6 +22,7 @@ import java.util.List;
 public class CanalOutboxConsumerSearch {
     private final ObjectMapper objectMapper;
     private final SearchIndexService indexService;
+    private final RagIndexService ragIndexService;
 
     /**
      * 消费 outbox 消息，解析合法行并按实体类型更新索引。
@@ -42,18 +44,33 @@ public class CanalOutboxConsumerSearch {
                 }
 
                 JsonNode payload = objectMapper.readTree(payloadNode.asText());
-                String entity = text(payload.get("entity"));
-                String op = text(payload.get("op"));
-                Long id = asLong(payload.get("id"));
+                String entity;
+                String op;
+                Long id;
+                if (isUnifiedPayload(payload)) {
+                    entity = text(payload.get("aggregateType"));
+                    id = asLong(payload.get("aggregateId"));
+                    JsonNode data = payload.get("data");
+                    op = text(data == null ? null : data.get("op"));
+                    if (op == null) {
+                        op = text(payload.get("eventType"));
+                    }
+                } else {
+                    entity = text(payload.get("entity"));
+                    op = text(payload.get("op"));
+                    id = asLong(payload.get("id"));
+                }
                 if (!"knowpost".equals(entity) || id == null) {
                     continue;
                 }
 
-                // 软删与 upsert，均覆盖写入同一文档 ID，保证幂等
-                if ("delete".equalsIgnoreCase(op)) {
+                // 软删与 upsert，均覆盖同一文档 ID；RAG 先删旧切片再按当前 DB 状态重建。
+                if (isDeleteOperation(op)) {
                     indexService.softDeleteKnowPost(id);
+                    ragIndexService.deletePostChunks(id);
                 } else {
                     indexService.upsertKnowPost(id);
+                    ragIndexService.rebuildSinglePost(id);
                 }
             }
             // 提交位点，确保“已处理”的语义
@@ -63,6 +80,18 @@ public class CanalOutboxConsumerSearch {
 
     private String text(JsonNode n) {
         return n == null ? null : n.asText();
+    }
+
+    private boolean isUnifiedPayload(JsonNode payload) {
+        return payload != null
+                && payload.has("aggregateType")
+                && payload.has("eventType")
+                && payload.has("data");
+    }
+
+    private boolean isDeleteOperation(String op) {
+        return "delete".equalsIgnoreCase(op)
+                || "KnowPostDeleted".equalsIgnoreCase(op);
     }
 
     private Long asLong(JsonNode n) {

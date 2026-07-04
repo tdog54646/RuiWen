@@ -53,6 +53,15 @@ public class RagIndexService {
     }
 
     public int reindexSinglePost(long postId) {
+        return reindexSinglePost(postId, false);
+    }
+
+    public int rebuildSinglePost(long postId) {
+        deletePostChunks(postId);
+        return reindexSinglePost(postId, true);
+    }
+
+    private int reindexSinglePost(long postId, boolean force) {
         KnowPostDetailRow row = knowPostMapper.findDetailById(postId);
         if (row == null) {
             log.warn("Post {} not found", postId);
@@ -74,7 +83,7 @@ public class RagIndexService {
         // 指纹检测：如未变化则跳过重建
         String currentSha = row.getContentSha256();
         String currentEtag = row.getContentEtag();
-        if (isUpToDate(postId, currentSha, currentEtag)) {
+        if (!force && isUpToDate(postId, currentSha, currentEtag)) {
             log.info("Post {} already indexed with same fingerprint, skip", postId);
             return 0;
         }
@@ -94,7 +103,9 @@ public class RagIndexService {
             return 0;
         }
         // 幂等 upsert：先删除旧切片
-        deleteExistingChunks(postId);
+        if (!force) {
+            deletePostChunks(postId);
+        }
 
         // 组装 Document（文本 + 业务元数据），用于向量写入与检索过滤
         long nowMs = Instant.now().toEpochMilli();
@@ -167,7 +178,7 @@ public class RagIndexService {
     /**
      * 删除旧切片：按 metadata.postId 精确删除，确保 upsert 幂等
      */
-    private void deleteExistingChunks(long postId) {
+    public void deletePostChunks(long postId) {
         try {
             if (!StringUtils.hasText(esProps.getIndex())) return;
             es.deleteByQuery(d -> d

@@ -45,6 +45,32 @@ public class KnowPostController {
     }
 
     /**
+     * 编辑已发布知文：更新正文对象存储信息与元数据，并写入 Outbox 供搜索/RAG 异步重建。
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<Void> updatePost(@PathVariable("id") long id,
+                                           @Valid @RequestBody KnowPostUpdateRequest request,
+                                           @AuthenticationPrincipal Jwt jwt) {
+        long userId = jwtService.extractUserId(jwt);
+        service.updatePost(
+                userId,
+                id,
+                request.objectKey(),
+                request.etag(),
+                request.size(),
+                request.sha256(),
+                request.title(),
+                request.tagId(),
+                request.tags(),
+                request.imgUrls(),
+                request.visible(),
+                request.isTop(),
+                request.description()
+        );
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 更新元数据（标题、标签、可见性、置顶、图片列表等）。
      */
     @PatchMapping("/{id}")

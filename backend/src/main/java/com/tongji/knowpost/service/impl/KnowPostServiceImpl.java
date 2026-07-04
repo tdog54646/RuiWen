@@ -15,9 +15,7 @@ import com.tongji.knowpost.model.KnowPost;
 import com.tongji.knowpost.model.KnowPostDetailRow;
 import com.tongji.knowpost.service.FeedCacheService;
 import com.tongji.knowpost.service.KnowPostService;
-
-import com.tongji.llm.rag.index.RagIndexService;
-import com.tongji.relation.outbox.OutboxMapper;
+import com.tongji.relation.outbox.OutboxService;
 import com.tongji.storage.config.OssProperties;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +30,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 @RequiredArgsConstructor
@@ -51,8 +48,7 @@ public class KnowPostServiceImpl implements KnowPostService {
     private static final Logger log = LoggerFactory.getLogger(KnowPostServiceImpl.class);
     private static final int DETAIL_LAYOUT_VER = 1;
     private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
-    private final RagIndexService ragIndexService;
-    private final OutboxMapper outboxMapper;
+    private final OutboxService outboxService;
 
     /**
      * 创建草稿并返回新 ID。
@@ -102,13 +98,60 @@ public class KnowPostServiceImpl implements KnowPostService {
         feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+    }
 
-        // 触发一次预索引（草稿阶段可能因可见性/状态被跳过）
-        try {
-            ragIndexService.ensureIndexed(id);
-        } catch (Exception e) {
-            log.warn("Pre-index after content confirm failed, post {}: {}", id, e.getMessage());
+    /**
+     * 编辑已发布知文：正文内容与元数据同事务更新，并通过 Outbox 异步重建搜索/RAG。
+     */
+    @Transactional
+    public void updatePost(long creatorId, long id, String objectKey, String etag, Long size, String sha256,
+                           String title, Long tagId, List<String> tags, List<String> imgUrls,
+                           String visible, Boolean isTop, String description) {
+        if (visible != null && !isValidVisible(visible)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
         }
+        feedCacheService.deleteAndPublishPublicFeedCaches();
+        feedCacheService.deleteMyFeedCaches(creatorId);
+        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+
+        Instant now = Instant.now();
+        KnowPost contentPost = KnowPost.builder()
+                .id(id)
+                .creatorId(creatorId)
+                .contentObjectKey(objectKey)
+                .contentEtag(etag)
+                .contentSize(size)
+                .contentSha256(sha256)
+                .contentUrl(publicUrl(objectKey))
+                .updateTime(now)
+                .build();
+        int contentUpdated = mapper.updateContent(contentPost);
+        if (contentUpdated == 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "知文不存在或无权限");
+        }
+
+        KnowPost metadataPost = KnowPost.builder()
+                .id(id)
+                .creatorId(creatorId)
+                .title(title)
+                .tagId(tagId)
+                .tags(toJsonOrNull(tags))
+                .imgUrls(toJsonOrNull(imgUrls))
+                .visible(visible)
+                .isTop(isTop)
+                .description(description)
+                .type("image_text")
+                .updateTime(now)
+                .build();
+        int metadataUpdated = mapper.updateMetadata(metadataPost);
+        if (metadataUpdated == 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "知文不存在或无权限");
+        }
+        enqueueKnowPostEvent(id, "KnowPostUpdated", "update");
+
+        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
+        feedCacheService.doubleDeleteMy(creatorId, 200);
+        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
     }
 
     /**
@@ -116,6 +159,9 @@ public class KnowPostServiceImpl implements KnowPostService {
      */
     @Transactional
     public void updateMetadata(long creatorId, long id, String title, Long tagId, List<String> tags, List<String> imgUrls, String visible, Boolean isTop, String description) {
+        if (visible != null && !isValidVisible(visible)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
+        }
         // 缓存双删（更新前先删除）
         feedCacheService.deleteAndPublishPublicFeedCaches();
         feedCacheService.deleteMyFeedCaches(creatorId);
@@ -139,6 +185,7 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
+        enqueueKnowPostEvent(id, "KnowPostUpdated", "update");
         // 更新后再次删除，避免并发下写回旧值
         feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
@@ -158,11 +205,7 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
-        try {
-            Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
-            String payload = objectMapper.writeValueAsString(new KnowPostEvent("knowpost", "insert", id));
-            outboxMapper.insert(outId, "knowpost", id, "KnowPostInserted", payload);
-        } catch (Exception ignored) {}
+        enqueueKnowPostEvent(id, "KnowPostInserted", "insert");
         try {
             userCounterService.incrementPosts(creatorId, 1);
         } catch (Exception ignored) {}
@@ -171,13 +214,6 @@ public class KnowPostServiceImpl implements KnowPostService {
         feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
-
-        // 发布成功后触发一次预索引，减少首次问答冷启动
-        try {
-            ragIndexService.ensureIndexed(id);
-        } catch (Exception e) {
-            log.warn("Pre-index after publish failed, post {}: {}", id, e.getMessage());
-        }
     }
 
     /**
@@ -212,6 +248,8 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
+        String eventType = "public".equals(visible) ? "KnowPostPublic" : "KnowPostPrivate";
+        enqueueKnowPostEvent(id, eventType, visible);
         feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
@@ -229,9 +267,14 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
+        enqueueKnowPostEvent(id, "KnowPostDeleted", "delete");
         feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);
         redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+    }
+
+    private void enqueueKnowPostEvent(long id, String eventType, String op) {
+        outboxService.insert("knowpost", id, eventType, new KnowPostEvent("knowpost", op, id));
     }
 
     private boolean isValidVisible(String visible) {
