@@ -32,3 +32,12 @@ deploy/redis/data
 deploy/kafka/data
 deploy/elasticsearch/data
 deploy/canal/logs
+
+.DS_Store
+.envrc
+backend/.run/
+backend/logs/
+.claude
+.agents
+skills-lock.json
+CLAUDE.md
