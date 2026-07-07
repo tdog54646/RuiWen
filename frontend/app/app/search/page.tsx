@@ -4,10 +4,18 @@ import { useRef, useState } from "react"
 import { SearchBar } from "@/components/ui/search-bar"
 import { PostCard } from "@/components/ui/post-card"
 import { LikeFavBar } from "@/components/ui/like-fav-bar"
+import {
+  EmptyState,
+  GlassCard,
+  PageHeader,
+  StatusChip,
+  StudioShell,
+} from "@/components/ui/studio"
 import { searchService } from "@/lib/api/search"
 import { useAuth } from "@/components/auth/auth-context"
 import type { FeedItem } from "@/lib/types/knowpost"
 import { Button } from "@/components/ui/button"
+import { Search } from "lucide-react"
 
 function parseTags(tagJson?: string): string[] {
   if (!tagJson) return []
@@ -67,12 +75,18 @@ export default function SearchPage() {
   }
 
   return (
-    <div className="rounded-2xl bg-background/90 p-6 shadow-sm">
-      <div className="mb-5 flex flex-col gap-3">
-        <h1 className="text-2xl font-bold tracking-tight">搜索你想学习的知识</h1>
-        <p className="text-sm text-muted-foreground">
-          从提示词或你的历史记录开始探索，连接灵感与成长
-        </p>
+    <StudioShell>
+      <PageHeader
+        badge={
+          <StatusChip icon={Search} tone="cyan">
+            知识检索
+          </StatusChip>
+        }
+        title="搜索你想学习的知识"
+        subtitle="从提示词或你的历史记录开始探索，连接灵感与成长"
+      />
+
+      <GlassCard delay={0.05} disableHover>
         <SearchBar
           placeholder="搜索你想学习的知识..."
           value={q}
@@ -100,25 +114,28 @@ export default function SearchPage() {
           }}
           onSubmit={() => executeSearch(q)}
         />
-      </div>
+      </GlassCard>
+
       {showLoginHint && !user && (
-        <div className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+        <div className="rounded-xl border border-amber-200/60 bg-amber-50/70 px-4 py-2.5 text-sm text-amber-700 backdrop-blur-md">
           当前为未登录状态，登录后可获得更完整的推荐与学习记录。
         </div>
       )}
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold">搜索结果</h2>
-        <p className="text-sm text-muted-foreground">
+
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-lg font-semibold text-slate-800">搜索结果</h2>
+        <span className="text-xs text-slate-400">
           {loading
             ? "加载中…"
             : items.length
               ? `共 ${items.length} 条（可能有更多）`
               : "请输入关键词后搜索"}
-        </p>
+        </span>
       </div>
-      <div className="columns-1 gap-6 sm:columns-2 lg:columns-3 xl:columns-4">
+
+      <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 xl:columns-4">
         {items.map((item) => (
-          <div key={item.id} className="mb-6 break-inside-avoid">
+          <div key={item.id} className="mb-4 break-inside-avoid">
             <PostCard
               id={item.id}
               title={item.title}
@@ -147,13 +164,25 @@ export default function SearchPage() {
           </div>
         ))}
       </div>
+
+      {loading && items.length === 0 ? (
+        <EmptyState loading />
+      ) : !loading && q.trim() && items.length === 0 ? (
+        <EmptyState>没有找到相关知文，换个关键词试试</EmptyState>
+      ) : null}
+
       {hasMore && (
-        <div className="mt-4 text-center">
-          <Button onClick={loadMore} disabled={loading}>
+        <div className="flex justify-center pt-2">
+          <Button
+            onClick={loadMore}
+            disabled={loading}
+            variant="outline"
+            className="border-white/60 bg-white/60 backdrop-blur-md"
+          >
             {loading ? "加载中…" : "加载更多"}
           </Button>
         </div>
       )}
-    </div>
+    </StudioShell>
   )
 }

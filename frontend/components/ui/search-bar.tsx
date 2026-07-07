@@ -28,8 +28,8 @@ export function SearchBar({
   const [focused, setFocused] = useState(false)
 
   return (
-    <div className="relative flex w-full items-center gap-2 rounded-full border bg-background/80 px-4 py-2 shadow-sm">
-      <Search className="size-5 text-muted-foreground" />
+    <div className="glass-surface glass-border relative flex w-full items-center gap-2 rounded-full px-4 py-2.5">
+      <Search className="size-5 text-violet-500" />
       <input
         className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         value={value}
@@ -46,23 +46,23 @@ export function SearchBar({
       </Button>
 
       {focused && (value?.trim()?.length ?? 0) > 0 && (
-        <div className="absolute left-0 top-full z-10 mt-2 w-full rounded-xl border bg-background p-1 shadow-lg">
+        <div className="glass-surface absolute left-0 top-full z-20 mt-2 w-full rounded-xl border border-white/60 p-1">
           {suggestLoading ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
+            <div className="px-3 py-2 text-sm text-slate-400">
               加载中…
             </div>
           ) : suggestions?.length ? (
             suggestions.map((s) => (
               <div
                 key={s}
-                className="cursor-pointer rounded-lg px-3 py-2 text-sm hover:bg-muted"
+                className="cursor-pointer rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-white/70"
                 onMouseDown={() => onSuggestionClick?.(s)}
               >
                 {s}
               </div>
             ))
           ) : (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
+            <div className="px-3 py-2 text-sm text-slate-400">
               无联想结果
             </div>
           )}

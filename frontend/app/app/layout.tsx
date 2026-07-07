@@ -1,16 +1,18 @@
 "use client"
 
 import { AuthProviderWrapper } from "@/components/auth/auth-provider"
-import { SidebarDemo } from "@/components/ui/sidebar-demo"
+import { AuroraBackground } from "@/components/ui/studio"
+import { TopNav } from "@/components/ui/top-nav"
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProviderWrapper>
-      <div className="mx-auto flex min-h-dvh w-full max-w-[1400px] gap-6 p-4 md:p-6">
-        <SidebarDemo />
-        <div className="flex flex-1 flex-col gap-6 overflow-hidden pt-16 md:pt-0">
+      <div className="relative min-h-dvh">
+        <AuroraBackground className="fixed inset-0" />
+        <TopNav />
+        <main className="relative mx-auto w-full max-w-[1120px] px-4 pb-12 pt-24 md:pt-28">
           {children}
-        </div>
+        </main>
       </div>
     </AuthProviderWrapper>
   )

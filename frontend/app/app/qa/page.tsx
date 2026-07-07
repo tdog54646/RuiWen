@@ -4,7 +4,15 @@ import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import { useAuth } from "@/components/auth/auth-context"
 import { Button } from "@/components/ui/button"
-import { Send, Loader2 } from "lucide-react"
+import {
+  GlassCard,
+  MessageBanner,
+  PageHeader,
+  SectionLabel,
+  StatusChip,
+  StudioShell,
+} from "@/components/ui/studio"
+import { Send, Loader2, Bot, Sparkles, Square } from "lucide-react"
 import { MarkdownRenderer } from "@/components/ui/markdown-renderer"
 import { qaService } from "@/lib/api/qa"
 
@@ -89,44 +97,52 @@ export default function QAPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 rounded-2xl bg-background/90 p-6 shadow-sm">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">AI问答</h1>
-        <p className="text-sm text-muted-foreground">
-          基于知识库的智能问答系统
-        </p>
-      </div>
+    <StudioShell>
+      <PageHeader
+        badge={
+          <StatusChip icon={Sparkles} tone="violet">
+            知识库问答
+          </StatusChip>
+        }
+        title="AI 问答"
+        subtitle="基于知识库的智能问答系统，实时流式生成"
+        chips={
+          isStreaming ? (
+            <StatusChip icon={Loader2} tone="cyan">
+              生成中
+            </StatusChip>
+          ) : null
+        }
+      />
 
       {!user && (
-        <div className="rounded-xl border bg-muted/40 p-4">
+        <GlassCard delay={0.05}>
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">登录后使用AI问答功能</p>
+            <p className="text-sm text-slate-500">登录后使用 AI 问答功能</p>
             <Link href="/login?next=/app/qa">
               <Button size="sm">去登录</Button>
             </Link>
           </div>
-        </div>
+        </GlassCard>
       )}
 
       {user && (
-        <>
+        <GlassCard delay={0.05} disableHover>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="rounded-xl border bg-background p-4">
-              <textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="请输入您的问题..."
-                className="w-full resize-none border-0 bg-transparent text-sm outline-none focus:ring-0"
-                rows={4}
-                disabled={isStreaming}
-              />
-            </div>
-
+            <SectionLabel>你的问题</SectionLabel>
+            <textarea
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="请输入您的问题..."
+              className="min-h-[110px] w-full resize-none rounded-xl border border-white/60 bg-white/50 p-4 text-sm leading-relaxed outline-none transition-colors placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white/70"
+              rows={4}
+              disabled={isStreaming}
+            />
             <div className="flex justify-end gap-2">
               <Button
                 type="submit"
                 disabled={isStreaming || !question.trim()}
-                className="gap-2"
+                className="gap-1.5 bg-gradient-to-r from-cyan-500 to-violet-600 text-white"
               >
                 {isStreaming ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -140,35 +156,42 @@ export default function QAPage() {
                 variant="outline"
                 onClick={handleStop}
                 disabled={!isStreaming}
+                className="gap-1.5 border-white/60 bg-white/60 backdrop-blur-md"
               >
+                <Square className="size-3.5" />
                 停止
               </Button>
             </div>
           </form>
 
-          {error && (
-            <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-4">
-              <p className="text-sm text-destructive">{error}</p>
-            </div>
-          )}
-
-          {(answer || isStreaming) && (
-            <div className="rounded-xl border bg-background p-6">
-              <h2 className="mb-3 text-lg font-semibold">回答</h2>
-              <div className="prose prose-sm max-w-none">
-                {answer ? (
-                  <MarkdownRenderer content={answer} className="prose-sm" />
-                ) : (
-                  <span className="text-sm text-muted-foreground">
-                    {isStreaming ? "等待生成…" : ""}
-                  </span>
-                )}
-              </div>
-              <div ref={answerEndRef} />
-            </div>
-          )}
-        </>
+          <div className="mt-4">
+            <MessageBanner tone="error" show={!!error}>
+              {error}
+            </MessageBanner>
+          </div>
+        </GlassCard>
       )}
-    </div>
+
+      {(answer || isStreaming) && (
+        <GlassCard delay={0.1} disableHover contentClassName="flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600">
+              <Bot className="size-4" />
+            </div>
+            <SectionLabel>AI 回答</SectionLabel>
+          </div>
+          <div className="prose prose-sm max-w-none">
+            {answer ? (
+              <MarkdownRenderer content={answer} className="prose-sm" />
+            ) : (
+              <span className="text-sm text-slate-400">
+                {isStreaming ? "等待生成…" : ""}
+              </span>
+            )}
+          </div>
+          <div ref={answerEndRef} />
+        </GlassCard>
+      )}
+    </StudioShell>
   )
 }

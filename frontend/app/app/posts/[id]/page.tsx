@@ -3,16 +3,34 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import { AnimatePresence, motion } from "framer-motion"
 import { LikeFavBar } from "@/components/ui/like-fav-bar"
 import { FollowButton } from "@/components/ui/follow-button"
 import { MarkdownRenderer } from "@/components/ui/markdown-renderer"
 import { UserAvatar } from "@/components/ui/user-avatar"
 import { Button } from "@/components/ui/button"
+import {
+  GlassCard,
+  MessageBanner,
+  PageHeader,
+  SectionLabel,
+  StatusChip,
+  StudioShell,
+} from "@/components/ui/studio"
 import { useAuth } from "@/components/auth/auth-context"
 import { knowpostService, withCacheBuster } from "@/lib/api/knowpost"
 import { qaService } from "@/lib/api/qa"
 import type { KnowpostDetailResponse } from "@/lib/types/knowpost"
-import { X, ChevronLeft, ChevronRight, Bot, Send, Loader2 } from "lucide-react"
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Bot,
+  Send,
+  Loader2,
+  Sparkles,
+  Flame,
+} from "lucide-react"
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError"
@@ -149,40 +167,51 @@ export default function PostDetailPage() {
     }
   }, [])
 
-  const isSelf =
-    detail?.authorId &&
-    user?.id === detail.authorId
+  const isSelf = detail?.authorId && user?.id === detail.authorId
+
+  const uniqueTags = (detail?.tags ?? []).reduce<string[]>(
+    (acc, tag) => (acc.includes(tag) ? acc : [...acc, tag]),
+    [],
+  )
 
   return (
-    <article className="flex flex-col gap-6 rounded-2xl bg-background/90 p-6 shadow-sm">
-      <h1 className="text-2xl font-bold tracking-tight">{detail?.title ?? "加载中..."}</h1>
+    <StudioShell>
+      <PageHeader
+        title={detail?.title ?? "加载中..."}
+        subtitle={
+          detail?.publishTime
+            ? `发布于 ${new Date(
+                Number(detail.publishTime) > 1e15
+                  ? Number(detail.publishTime) / 1000
+                  : Number(detail.publishTime),
+              ).toLocaleDateString("zh-CN")}`
+            : undefined
+        }
+        badge={
+          <div className="flex flex-wrap items-center gap-1.5">
+            {uniqueTags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-violet-100/70 px-2 py-0.5 text-[11px] font-medium text-violet-700"
+              >
+                #{tag}
+              </span>
+            ))}
+            {detail && (
+              <StatusChip tone={detail.visible === "public" ? "emerald" : "default"}>
+                {detail.visible === "public" ? "公开" : "私密"}
+              </StatusChip>
+            )}
+          </div>
+        }
+      />
 
-      {error && (
-        <div className="text-sm text-destructive">{error}</div>
-      )}
+      <MessageBanner tone="error" show={!!error}>
+        {error}
+      </MessageBanner>
 
-      {detail?.images?.length ? (
-        <div className="flex gap-3 overflow-x-auto">
-          {detail.images.map((src, idx) => (
-            <div
-              key={idx}
-              className="aspect-[3/4] w-44 shrink-0 cursor-pointer overflow-hidden rounded-xl shadow-md"
-              onClick={() => {
-                setPreviewIndex(idx)
-                setPreviewOpen(true)
-              }}
-            >
-              <img
-                className="size-full object-cover"
-                src={src}
-                alt={detail.title}
-              />
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="flex flex-col gap-3">
+      {/* 作者 + 互动 */}
+      <GlassCard delay={0.05} contentClassName="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           {detail?.authorId ? (
             <Link
@@ -193,46 +222,31 @@ export default function PostDetailPage() {
                 <UserAvatar
                   src={detail.authorAvatar}
                   nickname={detail.authorNickname}
-                  className="size-9"
+                  className="size-10 ring-2 ring-white/60"
                 />
               ) : null}
-              <span className="font-semibold">{detail.authorNickname}</span>
+              <span className="font-semibold text-slate-800">
+                {detail.authorNickname}
+              </span>
             </Link>
           ) : (
-            <>
+            <div className="flex items-center gap-3">
               {detail?.authorAvatar ? (
                 <UserAvatar
                   src={detail.authorAvatar}
                   nickname={detail.authorNickname}
-                  className="size-9"
+                  className="size-10 ring-2 ring-white/60"
                 />
               ) : null}
-              <span className="font-semibold">{detail?.authorNickname}</span>
-            </>
+              <span className="font-semibold text-slate-800">
+                {detail?.authorNickname}
+              </span>
+            </div>
           )}
           {detail?.authorId && !isSelf && (
             <FollowButton targetUserId={detail.authorId} />
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {(detail?.tags ?? []).reduce<string[]>((acc, tag) => acc.includes(tag) ? acc : [...acc, tag], []).map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
-            >
-              #{tag}
-            </span>
-          ))}
-        </div>
-        {detail?.publishTime && (
-          <span className="text-xs text-muted-foreground">
-            {new Date(
-              Number(detail.publishTime) > 1e15
-                ? Number(detail.publishTime) / 1000
-                : Number(detail.publishTime)
-            ).toLocaleDateString("zh-CN")}
-          </span>
-        )}
         {detail && (
           <LikeFavBar
             entityId={detail.id}
@@ -246,130 +260,179 @@ export default function PostDetailPage() {
             }}
           />
         )}
-      </div>
+      </GlassCard>
 
-      <div>
-        <h2 className="mb-3 text-lg font-semibold">内容正文</h2>
-        <div className="rounded-xl bg-muted/30 p-6">
+      {/* 图片画廊 */}
+      {detail?.images?.length ? (
+        <GlassCard delay={0.1} disableHover>
+          <SectionLabel>图片</SectionLabel>
+          <div className="mt-3 flex gap-3 overflow-x-auto pb-2">
+            {detail.images.map((src, idx) => (
+              <motion.div
+                key={idx}
+                whileHover={{ y: -3 }}
+                className="aspect-[3/4] w-40 shrink-0 cursor-pointer overflow-hidden rounded-xl ring-1 ring-black/5"
+                onClick={() => {
+                  setPreviewIndex(idx)
+                  setPreviewOpen(true)
+                }}
+              >
+                <img
+                  className="size-full object-cover"
+                  src={src}
+                  alt={detail.title}
+                />
+              </motion.div>
+            ))}
+          </div>
+        </GlassCard>
+      ) : null}
+
+      {/* 正文 */}
+      <GlassCard delay={0.15} disableHover>
+        <SectionLabel>内容正文</SectionLabel>
+        <div className="mt-3">
           {contentText ? (
             <MarkdownRenderer content={contentText} />
           ) : (
-            <span className="text-muted-foreground">暂无内容</span>
+            <span className="text-sm text-slate-400">暂无内容</span>
           )}
-          {contentError && (
-            <div className="mt-2 text-sm text-destructive">
-              {contentError}
-            </div>
-          )}
+          <MessageBanner tone="error" show={!!contentError}>
+            {contentError}
+          </MessageBanner>
+        </div>
+      </GlassCard>
+
+      {/* AI 智能问答 */}
+      <GlassCard delay={0.2} disableHover contentClassName="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600">
+            <Bot className="size-4" />
+          </div>
+          <SectionLabel>AI 智能问答</SectionLabel>
         </div>
 
-        {/* AI 智能问答 — 移至正文下方 */}
-        <div className="mt-6 rounded-xl border p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Bot className="size-4 text-primary" />
-            AI 智能问答
-          </div>
-          {hotQuestion && (
-            <div className="mb-3 rounded-lg border bg-muted/20 p-2">
-              <p className="text-xs text-muted-foreground">大家都在问：</p>
-              <button
-                type="button"
-                className="mt-1 text-left text-sm text-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={() => startRag(hotQuestion)}
-                disabled={ragLoading}
-              >
+        {hotQuestion && (
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded-xl border border-white/60 bg-white/40 px-3 py-2.5 text-left backdrop-blur-md transition-colors hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => startRag(hotQuestion)}
+            disabled={ragLoading}
+          >
+            <Flame className="size-4 shrink-0 text-orange-500" />
+            <span className="flex flex-col">
+              <span className="text-[11px] text-slate-400">大家都在问</span>
+              <span className="text-sm font-medium text-slate-700">
                 {hotQuestion}
-              </button>
-            </div>
-          )}
-          <textarea
-            className="min-h-[60px] w-full resize-y rounded-lg border bg-background p-2 text-sm outline-none focus:border-ring"
-            placeholder="围绕本知文提问…"
-            value={ragQuestion}
-            onChange={(e) => setRagQuestion(e.target.value)}
-          />
-          <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => startRag()}
-              disabled={ragLoading || !ragQuestion.trim()}
-            >
-              {ragLoading ? (
-                <Loader2 className="mr-1 size-3.5 animate-spin" />
-              ) : (
-                <Send className="mr-1 size-3.5" />
-              )}
-              {ragLoading ? "生成中…" : "发送"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={stopRag}
-              disabled={!ragLoading}
-            >
-              停止
-            </Button>
-          </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            仅&quot;公开&quot;知文支持问答，答案基于当前知文实时生成。
-          </p>
-          {ragError && (
-            <div className="mt-2 text-xs text-destructive">{ragError}</div>
-          )}
-          <div className="mt-3 flex-1 overflow-auto rounded-lg bg-muted/30 p-3 text-sm">
+              </span>
+            </span>
+          </button>
+        )}
+
+        <textarea
+          className="min-h-[70px] w-full resize-y rounded-xl border border-white/60 bg-white/50 p-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white/70"
+          placeholder="围绕本知文提问…"
+          value={ragQuestion}
+          onChange={(e) => setRagQuestion(e.target.value)}
+        />
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            onClick={() => startRag()}
+            disabled={ragLoading || !ragQuestion.trim()}
+            className="gap-1.5 bg-gradient-to-r from-cyan-500 to-violet-600 text-white"
+          >
+            {ragLoading ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Send className="size-3.5" />
+            )}
+            {ragLoading ? "生成中…" : "发送"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={stopRag}
+            disabled={!ragLoading}
+            className="border-white/60 bg-white/60 backdrop-blur-md"
+          >
+            停止
+          </Button>
+        </div>
+
+        <p className="flex items-center gap-1 text-[11px] text-slate-400">
+          <Sparkles className="size-3" />
+          仅&quot;公开&quot;知文支持问答，答案基于当前知文实时生成。
+        </p>
+
+        <MessageBanner tone="error" show={!!ragError}>
+          {ragError}
+        </MessageBanner>
+
+        {(ragAnswer || ragLoading) && (
+          <div className="flex-1 overflow-auto rounded-xl border border-white/60 bg-white/40 p-4 text-sm backdrop-blur-md">
             {ragAnswer ? (
               <MarkdownRenderer content={ragAnswer} className="prose-sm" />
             ) : (
-              <span className="text-muted-foreground">
-                {ragLoading ? "等待生成…" : "这里将展示答案（支持流式）"}
-              </span>
+              <span className="text-slate-400">等待生成…</span>
             )}
           </div>
-        </div>
-      </div>
+        )}
+      </GlassCard>
 
-      {previewOpen && detail?.images?.length ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => setPreviewOpen(false)}
-        >
-          <div
-            className="relative max-h-[80vh] max-w-[900px]"
-            onClick={(e) => e.stopPropagation()}
+      {/* 图片预览灯箱 */}
+      <AnimatePresence>
+        {previewOpen && detail?.images?.length ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md"
+            onClick={() => setPreviewOpen(false)}
           >
-            <img
-              className="max-h-[80vh] rounded-xl object-contain shadow-xl"
-              src={detail.images[previewIndex]}
-              alt={detail.title}
-            />
-            <button
-              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 shadow-md"
-              onClick={() =>
-                setPreviewIndex(
-                  (i) =>
-                    (i - 1 + detail.images.length) % detail.images.length,
-                )
-              }
+            <div
+              className="relative max-h-[80vh] max-w-[900px]"
+              onClick={(e) => e.stopPropagation()}
             >
-              <ChevronLeft className="size-5" />
-            </button>
-            <button
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 shadow-md"
-              onClick={() =>
-                setPreviewIndex((i) => (i + 1) % detail.images.length)
-              }
-            >
-              <ChevronRight className="size-5" />
-            </button>
-            <button
-              className="absolute right-2 top-2 rounded-full bg-white/80 p-1.5 shadow-md"
-              onClick={() => setPreviewOpen(false)}
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </article>
+              <motion.img
+                key={previewIndex}
+                initial={{ scale: 0.94, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                className="max-h-[80vh] rounded-2xl object-contain shadow-2xl"
+                src={detail.images[previewIndex]}
+                alt={detail.title}
+              />
+              <button
+                className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-white/80 p-2 shadow-md backdrop-blur-md transition-colors hover:bg-white"
+                onClick={() =>
+                  setPreviewIndex(
+                    (i) =>
+                      (i - 1 + detail.images.length) % detail.images.length,
+                  )
+                }
+              >
+                <ChevronLeft className="size-5" />
+              </button>
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-white/60 bg-white/80 p-2 shadow-md backdrop-blur-md transition-colors hover:bg-white"
+                onClick={() =>
+                  setPreviewIndex((i) => (i + 1) % detail.images.length)
+                }
+              >
+                <ChevronRight className="size-5" />
+              </button>
+              <button
+                className="absolute right-2 top-2 rounded-full border border-white/60 bg-white/80 p-1.5 shadow-md backdrop-blur-md transition-colors hover:bg-white"
+                onClick={() => setPreviewOpen(false)}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </StudioShell>
   )
 }

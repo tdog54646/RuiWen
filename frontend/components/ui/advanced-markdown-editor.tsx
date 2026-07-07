@@ -22,6 +22,7 @@ interface AdvancedMarkdownEditorProps {
 }
 
 const MONACO_BASE = "/monaco-editor/vs";
+const MIN_EDITOR_HEIGHT = 360;
 
 function loadMonaco(): Promise<typeof import("monaco-editor")> {
   return new Promise((resolve, reject) => {
@@ -85,6 +86,37 @@ export default function AdvancedMarkdownEditor({
   const [currentValue, setCurrentValue] = useState(initialValue);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const isScrollingRef = useRef<"editor" | "preview" | null>(null);
+
+  // 编辑区高度：autoHeight 随内容自适应；manualMin 为用户拖拽设定的下限
+  const [autoHeight, setAutoHeight] = useState(600);
+  const [manualMin, setManualMin] = useState(MIN_EDITOR_HEIGHT);
+  const [maxHeight] = useState(() =>
+    typeof window !== "undefined" ? Math.round(window.innerHeight * 0.8) : 1000
+  );
+  const effectiveHeight = Math.max(manualMin, Math.min(autoHeight, maxHeight));
+
+  const syncAutoHeight = useCallback(() => {
+    const inst = editorRef.current;
+    if (!inst) return;
+    const h = inst.getContentHeight();
+    setAutoHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
+  }, []);
+
+  const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = effectiveHeight;
+    const onMove = (ev: PointerEvent) => {
+      const next = startH + (ev.clientY - startY);
+      setManualMin(Math.max(MIN_EDITOR_HEIGHT, Math.min(next, maxHeight)));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -199,6 +231,8 @@ export default function AdvancedMarkdownEditor({
           isScrollingRef.current = null;
         });
 
+        instance.onDidContentSizeChange(() => syncAutoHeight());
+
         setIsReady(true);
         instance.focus();
       })
@@ -242,15 +276,21 @@ export default function AdvancedMarkdownEditor({
     isScrollingRef.current = null;
   }, []);
 
-  const handleModeChange = useCallback((m: EditorMode) => {
-    setMode(m);
-    setTimeout(() => editorRef.current?.layout(), 50);
-  }, []);
+  const handleModeChange = useCallback(
+    (m: EditorMode) => {
+      setMode(m);
+      setTimeout(() => {
+        editorRef.current?.layout();
+        syncAutoHeight();
+      }, 60);
+    },
+    [syncAutoHeight]
+  );
 
   return (
-    <div className="flex flex-col rounded-md border overflow-hidden">
+    <div className="flex flex-col overflow-hidden rounded-xl border border-white/50 shadow-sm dark:border-white/10">
       {/* Mode toolbar */}
-      <div className="flex items-center gap-1 border-b px-2 py-1.5 bg-muted/30">
+      <div className="flex items-center gap-1 border-b border-white/50 bg-white/50 px-2 py-1.5 backdrop-blur-md dark:border-white/10 dark:bg-white/5">
         <Button
           variant={mode === "edit" ? "secondary" : "ghost"}
           size="xs"
@@ -280,7 +320,7 @@ export default function AdvancedMarkdownEditor({
       </div>
 
       {/* Editor area */}
-      <div className="flex flex-1" style={{ height: "600px" }}>
+      <div className="flex" style={{ height: effectiveHeight }}>
         {/* Monaco Editor — left pane */}
         <div
           className={cn(
@@ -319,6 +359,17 @@ export default function AdvancedMarkdownEditor({
             )}
           </div>
         </div>
+      </div>
+
+      {/* 拖拽手柄：上下拖动调整编辑区高度，双击恢复随内容自适应 */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        onPointerDown={handleResizeStart}
+        onDoubleClick={() => setManualMin(MIN_EDITOR_HEIGHT)}
+        className="group/drag flex h-4 cursor-row-resize items-center justify-center border-t border-white/50 bg-white/40 transition-colors hover:bg-white/70 dark:border-white/10 dark:bg-white/5"
+      >
+        <span className="h-1 w-10 rounded-full bg-slate-300 transition-colors group-hover/drag:bg-violet-400" />
       </div>
     </div>
   );

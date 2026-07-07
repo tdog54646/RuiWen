@@ -4,10 +4,50 @@ import { useRef, useState, useEffect } from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { MoreHorizontal, Pin, Globe, Lock, Trash2, Pencil } from "lucide-react"
+import { motion } from "framer-motion"
 import { useAuth } from "@/components/auth/auth-context"
 import { knowpostService } from "@/lib/api/knowpost"
 import type { VisibleScope } from "@/lib/types/knowpost"
 import { UserAvatar } from "./user-avatar"
+
+/** 由标题确定性地生成一个色相，保证同一篇文章占位封面颜色稳定。 */
+function hueFrom(seed: string): number {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) {
+    h = (h * 31 + seed.charCodeAt(i)) % 360
+  }
+  return h
+}
+
+/** 无封面图时的渐变占位封面，保证有图/无图卡片高度完全一致。 */
+function CoverPlaceholder({ title, tag }: { title: string; tag?: string }) {
+  const hue = hueFrom(title)
+  const initial = title.trim().charAt(0) || "知"
+  return (
+    <div
+      className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden"
+      style={{
+        background: `linear-gradient(135deg, hsl(${hue} 72% 62%), hsl(${(hue + 48) % 360} 68% 46%))`,
+      }}
+    >
+      <div
+        className="absolute inset-0 opacity-25"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 22% 20%, rgba(255,255,255,0.9) 0, transparent 42%)",
+        }}
+      />
+      <span className="relative select-none text-6xl font-black text-white/95 drop-shadow-sm">
+        {initial}
+      </span>
+      {tag && (
+        <span className="absolute bottom-2 left-2 rounded-full bg-black/20 px-2 py-0.5 text-[11px] font-medium text-white/90 backdrop-blur-sm">
+          #{tag}
+        </span>
+      )}
+    </div>
+  )
+}
 
 export type PostCardProps = {
   id: string
@@ -28,6 +68,7 @@ export type PostCardProps = {
     action: "top" | "visibility" | "delete",
     payload?: unknown,
   ) => void
+  className?: string
 }
 
 export function PostCard({
@@ -43,6 +84,7 @@ export function PostCard({
   footerExtra,
   editable = false,
   onChanged,
+  className,
 }: PostCardProps) {
   const { tokens } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -109,26 +151,28 @@ export function PostCard({
 
   const content = (
     <>
-      {coverImage && (
-        <div className="overflow-hidden rounded-xl">
+      <div className="overflow-hidden rounded-xl">
+        {coverImage ? (
           <img
             className="aspect-[4/3] w-full object-cover"
             src={coverImage}
             alt={title}
             loading="lazy"
           />
-        </div>
-      )}
-      <div className="flex flex-1 flex-col gap-2">
-        <h3 className="line-clamp-2 font-semibold leading-snug">{title}</h3>
-        {summary.trim() && (
-          <p className="line-clamp-2 text-sm text-muted-foreground">
-            {summary}
-          </p>
+        ) : (
+          <CoverPlaceholder title={title} tag={tags[0]} />
         )}
+      </div>
+      <div className="flex flex-1 flex-col gap-2">
+        <h3 className="line-clamp-2 min-h-[2.5rem] font-semibold leading-snug">
+          {title}
+        </h3>
+        <p className="line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
+          {summary.trim() || "点击查看正文详情"}
+        </p>
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {tags.map((tag) => (
+            {tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
                 className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
@@ -159,10 +203,16 @@ export function PostCard({
   )
 
   return (
-    <article className="relative flex flex-col gap-3 rounded-2xl border bg-background p-4 shadow-sm transition-shadow hover:shadow-md">
+    <motion.article
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -4 }}
+      className={`glass-surface glass-border relative flex h-full flex-col gap-3 rounded-2xl p-4 ${className ?? ""}`}
+    >
       {localIsTop && (
         <div className="absolute left-3 top-3 z-[2]">
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
+          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-2 py-0.5 text-[11px] font-bold text-white shadow-sm">
             <Pin className="size-3" />
             置顶
           </span>
@@ -173,7 +223,7 @@ export function PostCard({
           <button
             ref={btnRef}
             type="button"
-            className="absolute right-3 top-3 z-[5] flex size-7 items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:bg-muted"
+            className="absolute right-3 top-3 z-[5] flex size-7 items-center justify-center rounded-full border border-white/60 bg-white/70 text-slate-500 backdrop-blur-md transition-colors hover:bg-white/90"
             onClick={() => setMenuOpen(!menuOpen)}
           >
             <MoreHorizontal className="size-4" />
@@ -181,7 +231,7 @@ export function PostCard({
           {menuOpen && (
             <div
               ref={menuRef}
-              className="absolute right-3 top-11 z-10 min-w-[140px] rounded-lg border bg-popover p-1 shadow-lg"
+              className="glass-surface absolute right-3 top-11 z-10 min-w-[140px] rounded-xl border border-white/60 p-1"
             >
               {menuError && (
                 <div className="px-2 py-1 text-xs text-destructive">
@@ -240,6 +290,6 @@ export function PostCard({
       ) : (
         content
       )}
-    </article>
+    </motion.article>
   )
 }

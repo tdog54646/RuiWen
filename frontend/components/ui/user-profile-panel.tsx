@@ -5,6 +5,13 @@ import { LikeFavBar } from "@/components/ui/like-fav-bar"
 import { PostCard } from "@/components/ui/post-card"
 import { RelationCounters } from "@/components/ui/relation-counters"
 import { UserAvatar } from "@/components/ui/user-avatar"
+import {
+  EmptyState,
+  GlassCard,
+  MessageBanner,
+  PageHeader,
+  StudioShell,
+} from "@/components/ui/studio"
 import type { FeedItem } from "@/lib/types/knowpost"
 
 function parseTags(tagJson?: string | null): string[] {
@@ -64,94 +71,101 @@ export function UserProfilePanel({
   const tags = parseTags(profile?.tagJson)
 
   return (
-    <div className="flex flex-col gap-6 rounded-2xl bg-background/90 p-6 shadow-sm">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
-        <p className="text-sm text-muted-foreground">{pageSubtitle}</p>
-      </div>
+    <StudioShell>
+      <PageHeader
+        title={pageTitle}
+        subtitle={pageSubtitle}
+        chips={headerAction}
+      />
 
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">个人信息</h2>
-          {headerAction}
-        </div>
-
-        <div className="flex items-center gap-6">
-          <UserAvatar
-            src={profile?.avatar || undefined}
-            nickname={displayName}
-            size="lg"
-            className="size-20"
-          />
-          <div className="flex flex-col gap-1">
-            <span className="text-xl font-bold">{displayName}</span>
-            <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+      <GlassCard delay={0.05} contentClassName="flex flex-col gap-5">
+        <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:gap-6 sm:text-left">
+          <div className="rounded-full bg-gradient-to-br from-cyan-400/50 via-violet-500/40 to-blue-500/50 p-[3px] shadow-lg shadow-violet-500/20">
+            <UserAvatar
+              src={profile?.avatar || undefined}
+              nickname={displayName}
+              className="size-32 rounded-full ring-2 ring-white"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-2xl font-bold text-slate-900">{displayName}</span>
+            <div className="flex flex-wrap justify-center gap-2 text-sm text-slate-500 sm:justify-start">
               {tags.length > 0
-                ? tags.map((tag) => <span key={tag}>{tag}</span>)
-                : <span>未设置标签</span>}
+                ? tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full bg-violet-100/70 px-2 py-0.5 text-xs font-medium text-violet-700"
+                    >
+                      #{tag}
+                    </span>
+                  ))
+                : <span className="text-xs">未设置标签</span>}
             </div>
           </div>
         </div>
 
-        <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600">
           {profile?.bio ?? "暂无简介"}
         </p>
 
         {profile?.id ? <RelationCounters userId={profile.id} /> : null}
+      </GlassCard>
 
-        <div className="border-t pt-4">
-          <h2 className="mb-4 text-lg font-semibold">{postsTitle}</h2>
-          {error ? (
-            <div className="mb-4 text-sm text-destructive">{error}</div>
-          ) : null}
-          <div className="columns-1 gap-6 sm:columns-2 lg:columns-3">
-            {items.map((item) => (
-              <div key={item.id} className="mb-6 break-inside-avoid">
-                <PostCard
-                  id={item.id}
-                  title={item.title}
-                  summary={item.description ?? ""}
-                  tags={item.tags ?? []}
-                  isTop={item.isTop}
-                  authorTags={parseTags(item.tagJson)}
-                  teacher={{
-                    name: item.authorNickname,
-                    avatarUrl: item.authorAvatar ?? item.authorAvator,
-                  }}
-                  coverImage={item.coverImage}
-                  to={`/app/posts/${item.id}`}
-                  editable={editable}
-                  onChanged={(action, payload) => onPostChanged?.(item.id, action, payload)}
-                  footerExtra={
-                    <LikeFavBar
-                      entityId={item.id}
-                      compact
-                      initialCounts={{
-                        like: item.likeCount ?? 0,
-                        fav: item.favoriteCount ?? 0,
-                      }}
-                      initialState={{
-                        liked: item.liked,
-                        faved: item.faved,
-                      }}
-                    />
-                  }
-                />
-              </div>
-            ))}
-            {loading ? (
-              <div className="text-center text-sm text-muted-foreground">
-                加载中…
-              </div>
-            ) : null}
-            {!loading && items.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground">
-                {emptyText}
-              </div>
-            ) : null}
-          </div>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold text-slate-800">{postsTitle}</h2>
+          {!loading && items.length > 0 && (
+            <span className="text-xs text-slate-400">共 {items.length} 篇</span>
+          )}
         </div>
+
+        <MessageBanner tone="error" show={!!error}>
+          {error}
+        </MessageBanner>
+
+        <div className="columns-1 gap-4 sm:columns-2 lg:columns-3">
+          {items.map((item) => (
+            <div key={item.id} className="mb-4 break-inside-avoid">
+              <PostCard
+                id={item.id}
+                title={item.title}
+                summary={item.description ?? ""}
+                tags={item.tags ?? []}
+                isTop={item.isTop}
+                authorTags={parseTags(item.tagJson)}
+                teacher={{
+                  name: item.authorNickname,
+                  avatarUrl: item.authorAvatar ?? item.authorAvator,
+                }}
+                coverImage={item.coverImage}
+                to={`/app/posts/${item.id}`}
+                editable={editable}
+                onChanged={(action, payload) => onPostChanged?.(item.id, action, payload)}
+                footerExtra={
+                  <LikeFavBar
+                    entityId={item.id}
+                    compact
+                    initialCounts={{
+                      like: item.likeCount ?? 0,
+                      fav: item.favoriteCount ?? 0,
+                    }}
+                    initialState={{
+                      liked: item.liked,
+                      faved: item.faved,
+                    }}
+                  />
+                }
+              />
+            </div>
+          ))}
+        </div>
+
+        {loading ? (
+          <EmptyState loading />
+        ) : items.length === 0 ? (
+          <EmptyState>{emptyText}</EmptyState>
+        ) : null}
       </div>
-    </div>
+    </StudioShell>
   )
 }
