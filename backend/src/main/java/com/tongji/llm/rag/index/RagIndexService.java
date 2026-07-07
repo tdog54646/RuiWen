@@ -45,7 +45,15 @@ public class RagIndexService {
     private final SemanticChunker semanticChunker;
 
     // 拉取 Markdown 正文内容（每个实例创建一次 RestTemplate，避免重复创建开销）
-    private final RestTemplate http = new RestTemplate();
+    // 必须设置超时：拉取正文一旦阻塞会拖死整个消费线程，导致后续消息全部积压。
+    private final RestTemplate http = buildHttp();
+
+    private static RestTemplate buildHttp() {
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(3000);
+        factory.setReadTimeout(5000);
+        return new RestTemplate(factory);
+    }
 
     public void ensureIndexed(long postId) {
         // 当前策略：在问答前直接尝试重建（指纹未变化时会跳过）

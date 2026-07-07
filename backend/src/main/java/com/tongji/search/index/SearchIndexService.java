@@ -38,7 +38,17 @@ public class SearchIndexService {
     private final KnowPostMapper knowPostMapper;
     private final CounterService counterService;
     private final ObjectMapper objectMapper;
-    private final RestTemplate http = new RestTemplate();
+    private final RestTemplate http = buildHttp();
+
+    /**
+     * 构造带连接/读取超时的 RestTemplate，避免拉取正文时永久阻塞拖死整个消费线程。
+     */
+    private static RestTemplate buildHttp() {
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(3000);
+        factory.setReadTimeout(5000);
+        return new RestTemplate(factory);
+    }
 
     /**
      * 启动时若索引为空，进行历史数据回灌（分页）。

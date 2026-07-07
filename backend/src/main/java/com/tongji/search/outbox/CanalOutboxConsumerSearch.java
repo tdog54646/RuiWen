@@ -7,6 +7,7 @@ import com.tongji.relation.outbox.OutboxTopics;
 import com.tongji.search.index.SearchIndexService;
 import com.tongji.util.OutboxMessageUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import java.util.List;
  * 仅处理 entity=knowpost 的 upsert 与软删。
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class CanalOutboxConsumerSearch {
     private final ObjectMapper objectMapper;
@@ -73,9 +75,12 @@ public class CanalOutboxConsumerSearch {
                     ragIndexService.rebuildSinglePost(id);
                 }
             }
-            // 提交位点，确保“已处理”的语义
+            // 处理成功才提交位点；处理中抛出的异常交给全局 DefaultErrorHandler（重试 + 死信队列 canal-outbox.DLT）
             ack.acknowledge();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.error("处理 canal-outbox 消息失败，将重试后转死信队列 canal-outbox.DLT: msg={}", message, e);
+            throw new RuntimeException(e);
+        }
     }
 
     private String text(JsonNode n) {

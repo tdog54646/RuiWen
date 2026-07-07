@@ -1,5 +1,5 @@
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:58080}
   tomcat:
     threads:
       max: 800                          # 提升并发处理线程数
