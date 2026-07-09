@@ -2,7 +2,26 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { editor } from "monaco-editor";
-import { Eye, Edit3 } from "lucide-react";
+import {
+  Bold,
+  Code,
+  Code2,
+  Edit3,
+  Eye,
+  Heading1,
+  Heading2,
+  Heading3,
+  Image as ImageIcon,
+  Italic,
+  Link as LinkIcon,
+  List,
+  ListChecks,
+  ListOrdered,
+  Minus,
+  Quote,
+  Strikethrough,
+  Table,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarkdownRenderer } from "@/components/ui/markdown-renderer";
 import { cn } from "@/lib/utils";
@@ -23,6 +42,29 @@ interface AdvancedMarkdownEditorProps {
 
 const MONACO_BASE = "/monaco-editor/vs";
 const MIN_EDITOR_HEIGHT = 360;
+
+// 一键插入的 Markdown 文本（纯文本；选中段会由 insertInline 单独选中）
+const MD_LINK = "[链接文本](https://)";
+const MD_IMAGE = "![图片描述](https://)";
+const MD_TABLE =
+  "| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |";
+const MD_CODEBLOCK = "```js\n代码\n```";
+const MD_HR = "---";
+
+// 计算从 start 位置写入 text 后的光标位置（处理多行文本）
+function posAfter(
+  start: { lineNumber: number; column: number },
+  text: string,
+): { lineNumber: number; column: number } {
+  const segs = text.split("\n");
+  if (segs.length === 1) {
+    return { lineNumber: start.lineNumber, column: start.column + segs[0].length };
+  }
+  return {
+    lineNumber: start.lineNumber + segs.length - 1,
+    column: segs[segs.length - 1].length + 1,
+  };
+}
 
 function loadMonaco(): Promise<typeof import("monaco-editor")> {
   return new Promise((resolve, reject) => {
@@ -287,6 +329,158 @@ export default function AdvancedMarkdownEditor({
     [syncAutoHeight]
   );
 
+  // —— Markdown 快捷插入：全部基于 Monaco executeEdits（不依赖 insertSnippet 命令）——
+  const focusEditor = () => editorRef.current?.focus();
+
+  // 行内包裹：有选区则包裹选区，无选区则插入占位符并选中它
+  const wrapInline = useCallback(
+    (before: string, after: string, placeholder = "文本") => {
+      const inst = editorRef.current;
+      const model = inst?.getModel();
+      const sel = inst?.getSelection();
+      if (!inst || !model || !sel) return;
+      const selected = model.getValueInRange(sel);
+      const inner = selected.length > 0 ? selected : placeholder;
+      inst.pushUndoStop();
+      inst.executeEdits("markdown-toolbar", [
+        {
+          range: sel,
+          text: before + inner + after,
+          forceMoveMarkers: true,
+        },
+      ]);
+      inst.pushUndoStop();
+      // 选中新插入的 inner 文本，方便直接输入覆盖
+      const start = sel.getStartPosition();
+      const innerStart = posAfter(start, before);
+      const innerEnd = posAfter(innerStart, inner);
+      inst.setSelection({
+        startLineNumber: innerStart.lineNumber,
+        startColumn: innerStart.column,
+        endLineNumber: innerEnd.lineNumber,
+        endColumn: innerEnd.column,
+      });
+      focusEditor();
+    },
+    [],
+  );
+
+  // 在光标处插入文本，可选选中其中一段（selectText）
+  const insertInline = useCallback((text: string, selectText?: string) => {
+    const inst = editorRef.current;
+    const pos = inst?.getPosition();
+    if (!inst || !pos) return;
+    inst.pushUndoStop();
+    inst.executeEdits("markdown-toolbar", [
+      {
+        range: {
+          startLineNumber: pos.lineNumber,
+          startColumn: pos.column,
+          endLineNumber: pos.lineNumber,
+          endColumn: pos.column,
+        },
+        text,
+        forceMoveMarkers: true,
+      },
+    ]);
+    inst.pushUndoStop();
+    if (selectText) {
+      const idx = text.indexOf(selectText);
+      if (idx >= 0) {
+        const start = posAfter(pos, text.slice(0, idx));
+        const end = posAfter(start, selectText);
+        inst.setSelection({
+          startLineNumber: start.lineNumber,
+          startColumn: start.column,
+          endLineNumber: end.lineNumber,
+          endColumn: end.column,
+        });
+      }
+    }
+    focusEditor();
+  }, []);
+
+  // 行首前缀切换（标题、无序列表、任务清单、引用等），支持多行
+  const toggleLinePrefix = useCallback((prefix: string) => {
+    const inst = editorRef.current;
+    const model = inst?.getModel();
+    const sel = inst?.getSelection();
+    if (!inst || !model || !sel) return;
+    const ops: editor.IIdentifiedSingleEditOperation[] = [];
+    for (let l = sel.startLineNumber; l <= sel.endLineNumber; l++) {
+      const content = model.getLineContent(l);
+      const has = content.startsWith(prefix);
+      ops.push({
+        range: {
+          startLineNumber: l,
+          startColumn: 1,
+          endLineNumber: l,
+          endColumn: content.length + 1,
+        },
+        text: has ? content.slice(prefix.length) : `${prefix}${content}`,
+        forceMoveMarkers: true,
+      });
+    }
+    inst.pushUndoStop();
+    inst.executeEdits("markdown-toolbar", ops);
+    inst.pushUndoStop();
+    focusEditor();
+  }, []);
+
+  // 有序列表：自动编号，再次点击移除
+  const toggleOrderedList = useCallback(() => {
+    const inst = editorRef.current;
+    const model = inst?.getModel();
+    const sel = inst?.getSelection();
+    if (!inst || !model || !sel) return;
+    const ops: editor.IIdentifiedSingleEditOperation[] = [];
+    let n = 1;
+    for (let l = sel.startLineNumber; l <= sel.endLineNumber; l++) {
+      const content = model.getLineContent(l);
+      const m = content.match(/^\d+\.\s+/);
+      ops.push({
+        range: {
+          startLineNumber: l,
+          startColumn: 1,
+          endLineNumber: l,
+          endColumn: content.length + 1,
+        },
+        text: m ? content.slice(m[0].length) : `${n}. ${content}`,
+        forceMoveMarkers: true,
+      });
+      if (!m) n++;
+    }
+    inst.pushUndoStop();
+    inst.executeEdits("markdown-toolbar", ops);
+    inst.pushUndoStop();
+    focusEditor();
+  }, []);
+
+  // 块级插入：自动补前后空行，保证独立成段
+  const insertBlock = useCallback((block: string) => {
+    const inst = editorRef.current;
+    const model = inst?.getModel();
+    const pos = inst?.getPosition();
+    if (!inst || !model || !pos) return;
+    const emptyLine = model.getLineContent(pos.lineNumber).trim() === "";
+    const lead = emptyLine ? "" : "\n\n";
+    inst.pushUndoStop();
+    inst.executeEdits("markdown-toolbar", [
+      {
+        range: {
+          startLineNumber: pos.lineNumber,
+          startColumn: pos.column,
+          endLineNumber: pos.lineNumber,
+          endColumn: pos.column,
+        },
+        text: `${lead}${block}`,
+        forceMoveMarkers: true,
+      },
+    ]);
+    inst.pushUndoStop();
+    focusEditor();
+  }, []);
+
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-white/50 shadow-sm dark:border-white/10">
       {/* Mode toolbar */}
@@ -318,6 +512,76 @@ export default function AdvancedMarkdownEditor({
           {currentValue.length} 字
         </div>
       </div>
+
+      {/* Markdown 快捷插入工具条 */}
+      {mode !== "preview" && (
+        <div className="no-scrollbar flex items-center gap-0.5 overflow-x-auto border-b border-white/50 bg-white/40 px-2 py-1 backdrop-blur-md dark:border-white/10 dark:bg-white/5">
+          {/* 行内格式 */}
+          <ToolButton title="加粗" onClick={() => wrapInline("**", "**", "加粗")}>
+            <Bold className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="斜体" onClick={() => wrapInline("*", "*", "斜体")}>
+            <Italic className="size-3.5" />
+          </ToolButton>
+          <ToolButton
+            title="删除线"
+            onClick={() => wrapInline("~~", "~~", "删除线")}
+          >
+            <Strikethrough className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="行内代码" onClick={() => wrapInline("`", "`", "code")}>
+            <Code className="size-3.5" />
+          </ToolButton>
+
+          <Divider />
+
+          {/* 标题 */}
+          <ToolButton title="一级标题" onClick={() => toggleLinePrefix("# ")}>
+            <Heading1 className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="二级标题" onClick={() => toggleLinePrefix("## ")}>
+            <Heading2 className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="三级标题" onClick={() => toggleLinePrefix("### ")}>
+            <Heading3 className="size-3.5" />
+          </ToolButton>
+
+          <Divider />
+
+          {/* 列表 / 引用 */}
+          <ToolButton title="无序列表" onClick={() => toggleLinePrefix("- ")}>
+            <List className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="有序列表" onClick={toggleOrderedList}>
+            <ListOrdered className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="任务清单" onClick={() => toggleLinePrefix("- [ ] ")}>
+            <ListChecks className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="引用" onClick={() => toggleLinePrefix("> ")}>
+            <Quote className="size-3.5" />
+          </ToolButton>
+
+          <Divider />
+
+          {/* 插入 */}
+          <ToolButton title="链接" onClick={() => insertInline(MD_LINK, "链接文本")}>
+            <LinkIcon className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="图片" onClick={() => insertInline(MD_IMAGE, "图片描述")}>
+            <ImageIcon className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="表格" onClick={() => insertBlock(MD_TABLE)}>
+            <Table className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="代码块" onClick={() => insertBlock(MD_CODEBLOCK)}>
+            <Code2 className="size-3.5" />
+          </ToolButton>
+          <ToolButton title="分割线" onClick={() => insertBlock(MD_HR)}>
+            <Minus className="size-3.5" />
+          </ToolButton>
+        </div>
+      )}
 
       {/* Editor area */}
       <div className="flex" style={{ height: effectiveHeight }}>
@@ -372,5 +636,40 @@ export default function AdvancedMarkdownEditor({
         <span className="h-1 w-10 rounded-full bg-slate-300 transition-colors group-hover/drag:bg-violet-400" />
       </div>
     </div>
+  );
+}
+
+/* --------------------------- 工具条局部组件 --------------------------- */
+
+function ToolButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      // 阻止点击按钮时编辑器失焦 / 丢失当前选区
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-slate-500 transition-all hover:bg-white/80 hover:text-slate-900 active:scale-90 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Divider() {
+  return (
+    <span
+      aria-hidden
+      className="mx-1 h-4 w-px shrink-0 bg-slate-300/60 dark:bg-white/10"
+    />
   );
 }

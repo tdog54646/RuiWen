@@ -3,6 +3,16 @@
 import { Home, LogOut, MessageSquare, PenSquare, Search, Trophy, User } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { useState } from "react"
+import {
+  motion,
+  useMotionTemplate,
+  useMotionValueEvent,
+  useScroll,
+  useSpring,
+  useTransform,
+  useVelocity,
+} from "framer-motion"
 
 import { useAuth } from "@/components/auth/auth-context"
 import { UserAvatar } from "@/components/ui/user-avatar"
@@ -17,23 +27,142 @@ const navItems = [
   { href: "/app/qa", label: "AI问答", icon: MessageSquare },
 ] as const
 
+/**
+ * 液态玻璃 SVG 滤镜（全局只需渲染一次）：
+ * feTurbulence 噪声 → feGaussianBlur 柔化成位移图 →
+ * feDisplacementMap 把背景内容真实折射扭曲 + feSpecularLighting 高光。
+ */
+function GlassFilter() {
+  return (
+    <svg aria-hidden className="pointer-events-none absolute size-0">
+      <filter
+        id="nav-glass-distortion"
+        x="-10%"
+        y="-10%"
+        width="120%"
+        height="120%"
+      >
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.002 0.008"
+          numOctaves="2"
+          seed="17"
+          result="noise"
+        />
+        <feGaussianBlur in="noise" stdDeviation="2" result="softMap" />
+        <feDisplacementMap
+          in="SourceGraphic"
+          in2="softMap"
+          scale="80"
+          xChannelSelector="R"
+          yChannelSelector="G"
+          result="refracted"
+        />
+        <feSpecularLighting
+          in="softMap"
+          surfaceScale="6"
+          specularConstant="1"
+          specularExponent="90"
+          lightingColor="white"
+          result="spec"
+        >
+          <fePointLight x="-150" y="-150" z="250" />
+        </feSpecularLighting>
+        <feComposite in="spec" in2="refracted" operator="in" result="specMasked" />
+        <feComposite
+          in="refracted"
+          in2="specMasked"
+          operator="arithmetic"
+          k1="0"
+          k2="1"
+          k3="1"
+          k4="0"
+        />
+      </filter>
+    </svg>
+  )
+}
+
 export function TopNav() {
   const { user, logout } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const displayName = user?.nickname || user?.lineId || user?.email || "未登录用户"
 
+  // —— 滚动驱动的液态玻璃 ——
+  const { scrollY } = useScroll()
+  const [scrolled, setScrolled] = useState(false)
+  useMotionValueEvent(scrollY, "change", (latest) => {
+    setScrolled(latest > 8)
+  })
+
+  // 速度 → 弹性平滑 → 流动光带
+  const velocity = useVelocity(scrollY)
+  const smooth = useSpring(velocity, {
+    damping: 34,
+    stiffness: 320,
+    mass: 0.5,
+  })
+  const factor = useTransform(smooth, [-3500, 0, 3500], [-1, 0, 1], {
+    clamp: false,
+  })
+  const absSmooth = useTransform(smooth, (v) => Math.abs(v))
+
+  // 流光光带：静止居中、滚动时随方向横扫并变亮
+  const sheenStart = useTransform(factor, [-1, 0, 1], [108, 34, -44])
+  const sheenPeak = useTransform(factor, [-1, 0, 1], [128, 50, -28])
+  const sheenEnd = useTransform(factor, [-1, 0, 1], [148, 66, -12])
+  const sheenOpacity = useTransform(absSmooth, [0, 600, 2600], [0.18, 0.7, 0.95])
+  const sheenBg = useMotionTemplate`linear-gradient(105deg, transparent ${sheenStart}%, rgba(255,255,255,0.65) ${sheenPeak}%, transparent ${sheenEnd}%)`
+
   return (
     <header className="fixed inset-x-0 top-3 z-40 flex justify-center px-3">
+      <GlassFilter />
       <nav
         aria-label="主导航"
-        className="glass-surface glass-border mx-auto flex w-full max-w-[960px] items-center gap-1 rounded-full p-1.5"
+        className={cn(
+          "liquid-glass-nav mx-auto flex w-full max-w-[960px] items-center gap-1 overflow-hidden rounded-full p-1.5",
+          scrolled && "is-scrolled",
+        )}
       >
+        {/* 层 A：磨砂模糊（可靠基底，绝不挂 SVG 滤镜） */}
+        <div
+          aria-hidden
+          className="liquid-blur pointer-events-none absolute inset-0 z-0 rounded-full"
+        />
+        {/* 层 B：SVG 折射增强（滚动时内容在玻璃后被真实扭曲） */}
+        <div
+          aria-hidden
+          className="liquid-distort pointer-events-none absolute inset-0 z-[1] rounded-full"
+        />
+        {/* 层 C：环境彩色辉光（纯白底也可见的玻璃反光） */}
+        <div
+          aria-hidden
+          className="liquid-glow pointer-events-none absolute inset-0 z-[12] rounded-full"
+        />
+        {/* 层 D：玻璃着色 */}
+        <div
+          aria-hidden
+          className="liquid-tint pointer-events-none absolute inset-0 z-10 rounded-full"
+        />
+        {/* 层 E：流动光带（滚动速度驱动，液态流动感） */}
+        <motion.div
+          aria-hidden
+          className="liquid-sheen pointer-events-none absolute inset-0 z-[18] rounded-full"
+          style={{ backgroundImage: sheenBg, opacity: sheenOpacity }}
+        />
+        {/* 层 F：顶部镜面高光（“从上方打光”的亮线） */}
+        <div
+          aria-hidden
+          className="liquid-rim pointer-events-none absolute inset-0 z-[20] rounded-full"
+        />
+        {/* 棱镜色散彩边由 .liquid-glass-nav::before 提供 */}
+
         {/* 品牌 */}
         <Link
           href="/app"
           aria-label="Line 首页"
-          className="flex shrink-0 items-center gap-2 rounded-full px-2.5 py-1.5"
+          className="relative z-30 flex shrink-0 items-center gap-2 rounded-full px-2.5 py-1.5"
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-black text-[8px] font-black leading-none tracking-tight text-white">
             LINE
@@ -44,7 +173,7 @@ export function TopNav() {
         </Link>
 
         {/* 导航项：移动端仅图标可横滑，桌面端图标+文字居中 */}
-        <div className="no-scrollbar -mx-1 flex flex-1 items-center gap-0.5 overflow-x-auto px-1 md:mx-auto md:justify-center md:overflow-visible">
+        <div className="no-scrollbar relative z-30 -mx-1 flex flex-1 items-center gap-0.5 overflow-x-auto px-1 md:mx-auto md:justify-center md:overflow-visible">
           {navItems.map(({ href, label, icon: Icon }) => {
             const isActive =
               href === "/app" ? pathname === "/app" : pathname.startsWith(href)
@@ -70,7 +199,7 @@ export function TopNav() {
         </div>
 
         {/* 右侧：头像 + 登出 */}
-        <div className="ml-auto flex shrink-0 items-center gap-0.5 pl-1">
+        <div className="relative z-30 ml-auto flex shrink-0 items-center gap-0.5 pl-1">
           <Link
             href={user ? "/app/profile/edit" : `/login?next=${encodeURIComponent(pathname)}`}
             aria-label={displayName}
