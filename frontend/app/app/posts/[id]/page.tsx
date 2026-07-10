@@ -30,7 +30,9 @@ import {
   Loader2,
   Sparkles,
   Flame,
+  FileDown,
 } from "lucide-react"
+import { toast } from "sonner"
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError"
@@ -53,6 +55,8 @@ export default function PostDetailPage() {
   const [ragError, setRagError] = useState<string | null>(null)
   const [hotQuestion, setHotQuestion] = useState<string | null>(null)
   const ragControllerRef = useRef<AbortController | null>(null)
+
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -159,6 +163,19 @@ export default function PostDetailPage() {
     ragControllerRef.current?.abort()
     ragControllerRef.current = null
     setRagLoading(false)
+  }
+
+  const handleExportPdf = async () => {
+    if (!id || !detail) return
+    setExporting(true)
+    try {
+      await knowpostService.exportPdf(id, tokens?.accessToken, detail.title)
+      toast.success("已导出 PDF")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "导出失败")
+    } finally {
+      setExporting(false)
+    }
   }
 
   useEffect(() => {
@@ -290,7 +307,23 @@ export default function PostDetailPage() {
 
       {/* 正文 */}
       <GlassCard delay={0.15} disableHover>
-        <SectionLabel>内容正文</SectionLabel>
+        <div className="flex items-center justify-between gap-3">
+          <SectionLabel>内容正文</SectionLabel>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportPdf}
+            disabled={exporting || !detail}
+            className="gap-1.5 border-white/60 bg-white/60 backdrop-blur-md"
+          >
+            {exporting ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <FileDown className="size-3.5" />
+            )}
+            {exporting ? "导出中…" : "导出 PDF"}
+          </Button>
+        </div>
         <div className="mt-3">
           {contentText ? (
             <MarkdownRenderer content={contentText} />

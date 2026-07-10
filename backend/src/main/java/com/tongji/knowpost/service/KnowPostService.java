@@ -28,4 +28,13 @@ public interface KnowPostService {
     void delete(long creatorId, long id);
 
     KnowPostDetailResponse getDetail(long id, Long currentUserIdNullable);
+
+    /**
+     * 导出指定知文为 PDF。可见性规则同 {@link #getDetail}（公开或作者本人）。
+     *
+     * @param id                   知文 ID
+     * @param currentUserIdNullable 当前用户 ID（匿名访问时为 null）
+     * @return PDF 字节
+     */
+    byte[] exportPdf(long id, Long currentUserIdNullable);
 }

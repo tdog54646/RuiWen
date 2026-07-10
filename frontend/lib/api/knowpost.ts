@@ -1,4 +1,4 @@
-import { apiFetch } from "./client"
+import { apiFetch, apiFetchResponse } from "./client"
 import type {
   CreateDraftResponse,
   PresignRequest,
@@ -94,6 +94,32 @@ export const knowpostService = {
     apiFetch<KnowpostDetailResponse>(`${KNOWPOST_PREFIX}/detail/${id}`, {
       accessToken: accessToken ?? null,
     }),
+
+  /**
+   * 导出指定知文为 PDF 并触发浏览器下载。
+   * 非公开知文需传入作者本人的 accessToken，公开知文可匿名导出。
+   */
+  exportPdf: async (
+    id: string,
+    accessToken?: string | null,
+    title?: string,
+  ) => {
+    const resp = await apiFetchResponse(`${KNOWPOST_PREFIX}/${id}/export/pdf`, {
+      accessToken: accessToken ?? undefined,
+    })
+    const blob = await resp.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = objectUrl
+    const safeName = (title ?? "知文")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .slice(0, 80)
+    a.download = `${safeName}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(objectUrl)
+  },
 
   hotQuestion: (id: string, limit = 10) =>
     apiFetch<KnowpostHotQuestionResponse>(

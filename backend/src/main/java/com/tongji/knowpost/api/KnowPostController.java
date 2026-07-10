@@ -6,11 +6,17 @@ import com.tongji.knowpost.service.KnowPostFeedService;
 import com.tongji.knowpost.service.KnowPostService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/knowposts")
@@ -170,5 +176,24 @@ public class KnowPostController {
                                          @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
         return service.getDetail(id, userId);
+    }
+
+    /**
+     * 导出知文为 PDF（可见性规则同详情：公开或作者本人）。
+     * 匿名可导出公开知文，非公开知文需携带作者本人 JWT。
+     */
+    @GetMapping("/{id}/export/pdf")
+    public ResponseEntity<byte[]> exportPdf(@PathVariable("id") long id,
+                                            @AuthenticationPrincipal Jwt jwt) {
+        Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
+        byte[] pdf = service.exportPdf(id, userId);
+
+        String filename = "post-" + id + ".pdf";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDisposition(
+                ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build());
+        headers.setCacheControl("no-store");
+        return new ResponseEntity<>(pdf, headers, HttpStatus.OK);
     }
 }

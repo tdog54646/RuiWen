@@ -9,6 +9,7 @@ import com.tongji.cache.hotkey.HotKeyDetector;
 import com.tongji.counter.service.CounterService;
 import com.tongji.knowpost.api.dto.KnowPostDetailResponse;
 import com.tongji.knowpost.event.KnowPostEvent;
+import com.tongji.knowpost.export.PdfExportService;
 import com.tongji.knowpost.id.SnowflakeIdGenerator;
 import com.tongji.knowpost.mapper.KnowPostMapper;
 import com.tongji.knowpost.model.KnowPost;
@@ -45,8 +46,13 @@ public class KnowPostServiceImpl implements KnowPostService {
     private final com.tongji.counter.service.UserCounterService userCounterService;
     private final StringRedisTemplate redis;
     private final HotKeyDetector hotKey;
+    private final PdfExportService pdfExportService;
     private static final Logger log = LoggerFactory.getLogger(KnowPostServiceImpl.class);
     private static final int DETAIL_LAYOUT_VER = 1;
+    private static final java.net.http.HttpClient HTTP_CLIENT = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(5))
+            .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+            .build();
     private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
     private final OutboxService outboxService;
 
@@ -494,6 +500,56 @@ public class KnowPostServiceImpl implements KnowPostService {
         Long currentTtl = redis.getExpire(key);
         if (currentTtl < target) {
             redis.expire(key, java.time.Duration.ofSeconds(target));
+        }
+    }
+
+    /**
+     * 导出知文为 PDF。可见性规则复用 {@link #getDetail}（公开或作者本人），
+     * 拉取正文 Markdown 后交由 {@link PdfExportService} 渲染。
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] exportPdf(long id, Long currentUserIdNullable) {
+        KnowPostDetailResponse resp = getDetail(id, currentUserIdNullable);
+        String markdown = "";
+        if (resp.contentUrl() != null && !resp.contentUrl().isBlank()) {
+            try {
+                markdown = fetchText(resp.contentUrl());
+            } catch (Exception e) {
+                log.warn("导出 PDF 拉取正文失败 id={} url={}：{}", id, resp.contentUrl(), e.getMessage());
+            }
+        }
+        String dateText = formatPublishDate(resp.publishTime());
+        return pdfExportService.renderPost(
+                resp.title(),
+                resp.authorNickname(),
+                dateText,
+                resp.tags(),
+                resp.description(),
+                markdown
+        );
+    }
+
+    private String fetchText(String url) throws Exception {
+        java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+                .timeout(java.time.Duration.ofSeconds(5))
+                .GET()
+                .build();
+        java.net.http.HttpResponse<String> resp = HTTP_CLIENT.send(req,
+                java.net.http.HttpResponse.BodyHandlers.ofString(java.nio.charset.StandardCharsets.UTF_8));
+        if (resp.statusCode() / 100 != 2) {
+            throw new IllegalStateException("HTTP " + resp.statusCode());
+        }
+        return resp.body();
+    }
+
+    private String formatPublishDate(Instant publishTime) {
+        if (publishTime == null) return null;
+        try {
+            return "发布于 " + publishTime.atZone(java.time.ZoneId.of("Asia/Shanghai"))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy年M月d日"));
+        } catch (Exception e) {
+            return null;
         }
     }
 

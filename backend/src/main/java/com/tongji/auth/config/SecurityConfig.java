@@ -57,6 +57,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/knowposts/feed").permitAll()
                         // 知文详情（公开已发布内容，非公开由服务层校验）
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/detail/*").permitAll()
+                        // 知文导出 PDF（可见性由服务层校验，匿名可导出公开知文）
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/export/pdf").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/rag/*").permitAll()
                         // 知文详情页 RAG 问答（SSE 流式输出）允许匿名访问
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/qa/stream").permitAll()

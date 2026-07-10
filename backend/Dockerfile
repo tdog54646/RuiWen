@@ -13,7 +13,10 @@ RUN mvn -B -DskipTests package
 FROM ${JRE_IMAGE}
 WORKDIR /app
 
-ENV JAVA_OPTS=""
+# 安装 CJK 字体，供知文导出 PDF 渲染中文（openhtmltopdf 需显式注册字体文件）
+RUN apk add --no-cache font-noto-cjk font-dejavu
+
+ENV JAVA_OPTS="-Djava.awt.headless=true"
 ENV SERVER_PORT=8080
 
 COPY --from=builder /workspace/target/*.jar /app/app.jar
