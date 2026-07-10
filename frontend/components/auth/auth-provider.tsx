@@ -44,6 +44,11 @@ export function AuthProviderWrapper({ children }: { children: React.ReactNode })
   )
   // 仅当初始 tokens 存在（需要异步校验会话）时才处于 loading；否则水合即完成
   const [isLoading, setIsLoading] = useState(() => readStoredTokens() != null)
+  // hydration 守卫：SSR 与首帧客户端渲染对外保持一致（均为未登录/loading），
+  // 避免惰性初始化器从 localStorage 恢复登录态导致 hydration mismatch
+  // （SSR 无 localStorage → user=null，客户端首帧有 → user=已登录）。
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => setHydrated(true), [])
   const fetchingRef = useRef<Promise<void> | null>(null)
 
   const fetchUser = useCallback(async (accessToken: string) => {
@@ -151,16 +156,17 @@ export function AuthProviderWrapper({ children }: { children: React.ReactNode })
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user,
-      tokens,
-      isLoading,
+      // 水合完成前对外暴露未登录/loading 态，保证 SSR 与首帧客户端渲染一致
+      user: hydrated ? user : null,
+      tokens: hydrated ? tokens : null,
+      isLoading: hydrated ? isLoading : true,
       login,
       register,
       logout,
       refresh,
       reloadUser,
     }),
-    [user, tokens, isLoading, login, register, logout, refresh, reloadUser],
+    [hydrated, user, tokens, isLoading, login, register, logout, refresh, reloadUser],
   )
 
   return <ContextProvider value={value}>{children}</ContextProvider>

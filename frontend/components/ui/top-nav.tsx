@@ -84,7 +84,7 @@ function GlassFilter() {
 }
 
 export function TopNav() {
-  const { user, logout } = useAuth()
+  const { user, logout, isLoading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const displayName = user?.nickname || user?.lineId || user?.email || "未登录用户"
@@ -201,14 +201,20 @@ export function TopNav() {
         {/* 右侧：头像 + 登出 */}
         <div className="relative z-30 ml-auto flex shrink-0 items-center gap-0.5 pl-1">
           <Link
-            href={user ? "/app/profile/edit" : `/login?next=${encodeURIComponent(pathname)}`}
-            aria-label={displayName}
-            title={displayName}
+            href={
+              isLoading
+                ? "/app/profile"
+                : user
+                  ? "/app/profile/edit"
+                  : `/login?next=${encodeURIComponent(pathname)}`
+            }
+            aria-label={isLoading ? "我的" : displayName}
+            title={isLoading ? "我的" : displayName}
             className="rounded-full p-0.5 transition-colors hover:bg-white/60"
           >
             <UserAvatar
-              src={user?.avatar || undefined}
-              nickname={displayName}
+              src={isLoading ? undefined : user?.avatar || undefined}
+              nickname={isLoading ? undefined : displayName}
               size="sm"
               className="size-8 ring-1 ring-white/70"
             />
