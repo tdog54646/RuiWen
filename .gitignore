@@ -39,5 +39,6 @@ backend/.run/
 backend/logs/
 .claude
 .agents
+.mvn
 skills-lock.json
 CLAUDE.md
