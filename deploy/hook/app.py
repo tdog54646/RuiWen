@@ -203,6 +203,15 @@ def deploy_release(release_path: Path, tag: str) -> Path:
         shutil.copy2(env_backup, env_path)
         env_backup.unlink(missing_ok=True)
 
+    # 清理未被运行容器引用的旧版本镜像（部署已完成、新镜像已被运行容器引用）。
+    # 容错执行：镜像清理失败不影响部署结果（服务已就绪），仅记录告警。
+    # 背景：历次部署的旧 tag 镜像堆积曾撑满磁盘 → Redis AOF 写失败 → MISCONF 拒绝写入。
+    try:
+        run(["docker", "image", "prune", "-a", "-f"], cwd=APP_DIR, log_file=log_file)
+    except DeployError:
+        with log_file.open("a", encoding="utf-8") as log:
+            log.write("warning: docker image prune failed, skipped\n")
+
     prune_old_releases()
     return log_file
 
