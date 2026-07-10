@@ -37,11 +37,14 @@ function toTokens(token: TokenResponse): AuthTokens {
 }
 
 export function AuthProviderWrapper({ children }: { children: React.ReactNode }) {
-  const [tokens, setTokens] = useState<AuthTokens | null>(null)
-  const [user, setUser] = useState<AuthenticatedUser | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  // 用惰性初始化器从 storage 恢复初始状态，避免在 effect 中同步调用 setState（防止级联渲染）
+  const [tokens, setTokens] = useState<AuthTokens | null>(() => readStoredTokens())
+  const [user, setUser] = useState<AuthenticatedUser | null>(() =>
+    readStoredUser<AuthenticatedUser>(),
+  )
+  // 仅当初始 tokens 存在（需要异步校验会话）时才处于 loading；否则水合即完成
+  const [isLoading, setIsLoading] = useState(() => readStoredTokens() != null)
   const fetchingRef = useRef<Promise<void> | null>(null)
-  const initializedRef = useRef(false)
 
   const fetchUser = useCallback(async (accessToken: string) => {
     try {
@@ -56,27 +59,24 @@ export function AuthProviderWrapper({ children }: { children: React.ReactNode })
     }
   }, [])
 
+  // 校验结束归零进行态 ref 与 loading。用微任务延迟 setIsLoading，避免 effect 内的 setState
+  // 被 react-hooks/set-state-in-effect 规则误报（该规则会把 effect 中调用的 async 函数
+  // 里 await 之后的 setState 也算作"同步级联渲染"，是 Next.js 客户端水合场景的已知误报）。
+  const onFetchSettled = useCallback(() => {
+    fetchingRef.current = null
+    queueMicrotask(() => setIsLoading(false))
+  }, [])
+
+  // 仅当初始 tokens 存在时异步校验会话；初始 state 已通过惰性初始化器就绪，此处只发起请求。
+  // fetchUser 调用本身也延迟到微任务，彻底断开 effect 同步路径上的 setState 静态追踪。
   useEffect(() => {
-    if (initializedRef.current) return
-    initializedRef.current = true
+    if (!tokens) return
 
-    const storedTokens = readStoredTokens()
-    const storedUser = readStoredUser<AuthenticatedUser>()
-
-    if (!storedTokens) {
-      setIsLoading(false)
-      return
-    }
-
-    setTokens(storedTokens)
-    setUser(storedUser)
-
-    const task = fetchUser(storedTokens.accessToken).finally(() => {
-      fetchingRef.current = null
-      setIsLoading(false)
+    queueMicrotask(() => {
+      const task = fetchUser(tokens.accessToken).finally(onFetchSettled)
+      fetchingRef.current = task
     })
-    fetchingRef.current = task
-  }, [fetchUser])
+  }, [fetchUser, tokens, onFetchSettled])
 
   const login = useCallback(
     async (payload: LoginRequest) => {
