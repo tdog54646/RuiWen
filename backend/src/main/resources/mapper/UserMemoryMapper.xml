@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tongji.qa.mapper.UserMemoryMapper">
+
+    <resultMap id="UserMemoryResultMap" type="com.tongji.qa.model.UserMemory">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="category" column="category"/>
+        <result property="content" column="content"/>
+        <result property="source" column="source"/>
+        <result property="enabled" column="enabled"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.tongji.qa.model.UserMemory">
+        INSERT INTO user_memories (id, user_id, category, content, source, enabled, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{category}, #{content}, #{source}, #{enabled}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO user_memories (id, user_id, category, content, source, enabled, created_at, updated_at)
+        VALUES
+        <foreach collection="list" item="m" separator=",">
+            (#{m.id}, #{m.userId}, #{m.category}, #{m.content}, #{m.source}, #{m.enabled}, #{m.createdAt}, #{m.updatedAt})
+        </foreach>
+    </insert>
+
+    <select id="findById" resultMap="UserMemoryResultMap">
+        SELECT * FROM user_memories WHERE id = #{id}
+    </select>
+
+    <select id="listByUser" resultMap="UserMemoryResultMap">
+        SELECT * FROM user_memories
+        WHERE user_id = #{userId}
+        ORDER BY category ASC, updated_at DESC
+    </select>
+
+    <select id="listEnabledByUser" resultMap="UserMemoryResultMap">
+        SELECT * FROM user_memories
+        WHERE user_id = #{userId} AND enabled = 1
+        ORDER BY category ASC, updated_at DESC
+    </select>
+
+    <update id="update" parameterType="com.tongji.qa.model.UserMemory">
+        UPDATE user_memories
+        <set>
+            <if test="category != null">category = #{category},</if>
+            <if test="content != null">content = #{content},</if>
+            <if test="enabled != null">enabled = #{enabled},</if>
+            updated_at = NOW()
+        </set>
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM user_memories WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteAutoByUser">
+        DELETE FROM user_memories WHERE user_id = #{userId} AND source = 'auto'
+    </delete>
+
+</mapper>

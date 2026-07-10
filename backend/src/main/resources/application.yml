@@ -200,6 +200,20 @@ rag:
     context-limit: 5   # 最终送入 LLM 的最大 Chunk 数量（控制 Prompt 长度）
     empty-answer: "未找到相关信息，请尝试调整问题的表述，或换一种问法。"  # 检索为空时的兜底文案
 
+# ---------------------------------------------------------------------------
+# 多轮问答（qa）配置
+# 对应 QaProperties 中的字段
+# ---------------------------------------------------------------------------
+qa:
+  history-window: 6          # 携带最近 N 轮历史（一轮=user+assistant）
+  memory:
+    update-threshold: 8      # 每累计 N 条新消息触发一次自动记忆更新
+    summary-window: 20       # 记忆总结时回看最近 N 条消息
+    summary-max-tokens: 1024 # 记忆总结 LLM 最大生成 token 数
+  chat:
+    default-top-k: 5         # 默认 RAG 检索 Chunk 数量上限
+    default-max-tokens: 1024 # 默认 LLM 最大生成 token 数
+
 # ── 知文导出 PDF ──────────────────────────────────────────────────────
 # 中文字体查找路径：按顺序取第一个存在的文件注册为 font-family。
 # 容器（Alpine font-noto-cjk）与本地开发（macOS）路径均已内置默认值，通常无需修改。

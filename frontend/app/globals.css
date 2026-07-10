@@ -452,3 +452,18 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* AI 输入框：淡入缩放动画（Tailwind v4 用 @theme 替代 tailwind.config.js） */
+@theme {
+  --animate-fade-scale: fade-scale 0.2s ease-out;
+}
+@keyframes fade-scale {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}

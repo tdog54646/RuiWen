@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tongji.qa.mapper.QaConversationMapper">
+
+    <resultMap id="QaConversationResultMap" type="com.tongji.qa.model.QaConversation">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="title" column="title"/>
+        <result property="messageCount" column="message_count"/>
+        <result property="lastMessageAt" column="last_message_at"/>
+        <result property="deleted" column="deleted"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.tongji.qa.model.QaConversation">
+        INSERT INTO qa_conversations (id, user_id, title, message_count, last_message_at, deleted, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{title}, #{messageCount}, #{lastMessageAt}, #{deleted}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findById" resultMap="QaConversationResultMap">
+        SELECT * FROM qa_conversations WHERE id = #{id}
+    </select>
+
+    <select id="findOwnedById" resultMap="QaConversationResultMap">
+        SELECT * FROM qa_conversations
+        WHERE id = #{id} AND user_id = #{userId} AND deleted = 0
+    </select>
+
+    <select id="listByUser" resultMap="QaConversationResultMap">
+        SELECT * FROM qa_conversations
+        WHERE user_id = #{userId} AND deleted = 0
+        ORDER BY COALESCE(last_message_at, created_at) DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <update id="updateTitle">
+        UPDATE qa_conversations
+        SET title = #{title}, updated_at = NOW()
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <update id="softDelete">
+        UPDATE qa_conversations
+        SET deleted = 1, updated_at = NOW()
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <update id="touchAfterMessage">
+        UPDATE qa_conversations
+        SET message_count = message_count + 1, last_message_at = #{now}, updated_at = #{now}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

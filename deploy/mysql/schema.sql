@@ -108,6 +108,56 @@ CREATE TABLE IF NOT EXISTS follower (
     KEY idx_from (from_user_id, to_user_id, rel_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ===========================================================================
+-- AI 多轮问答模块（qa）
+-- - qa_conversations: 会话（多会话模型，每用户可有多个会话）
+-- - qa_messages:      消息（用户提问 + AI 回答，持久化，支持历史回看）
+-- - user_memories:    用户记忆（结构化条目，source=auto 为 AI 自动总结 / manual 为用户手写）
+-- 主键均使用业务层雪花算法生成（复用 SnowflakeIdGenerator）。
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS qa_conversations (
+    id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    title VARCHAR(128) NOT NULL DEFAULT '新对话',
+    message_count INT UNSIGNED NOT NULL DEFAULT 0,
+    last_message_at TIMESTAMP NULL DEFAULT NULL,
+    deleted TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY ix_qa_conv_user (user_id, deleted, last_message_at),
+    CONSTRAINT fk_qa_conv_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS qa_messages (
+    id BIGINT UNSIGNED NOT NULL,
+    conversation_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL COMMENT '冗余字段，便于按用户聚合统计',
+    role VARCHAR(16) NOT NULL COMMENT 'user / assistant',
+    content MEDIUMTEXT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'completed' COMMENT 'streaming/completed/interrupted/error',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY ix_qa_msg_conv (conversation_id, created_at),
+    KEY ix_qa_msg_user (user_id, created_at),
+    CONSTRAINT fk_qa_msg_conv FOREIGN KEY (conversation_id) REFERENCES qa_conversations(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS user_memories (
+    id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    category VARCHAR(64) NOT NULL COMMENT '分类，如 专业领域/偏好/已知事实',
+    content VARCHAR(512) NOT NULL,
+    source VARCHAR(16) NOT NULL DEFAULT 'auto' COMMENT 'auto(AI生成) / manual(用户手写)',
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY ix_qa_mem_user (user_id, enabled),
+    KEY ix_qa_mem_user_source (user_id, source),
+    CONSTRAINT fk_qa_mem_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE USER IF NOT EXISTS 'canal'@'%' IDENTIFIED BY 'C7vL2pQ9xM4sT8zN5yK3wH6rA1dE0';
 ALTER USER 'canal'@'%' IDENTIFIED BY 'C7vL2pQ9xM4sT8zN5yK3wH6rA1dE0';
 

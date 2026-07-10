@@ -1,197 +1,304 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { Brain, Plus, Sparkles } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
 import { Button } from "@/components/ui/button"
-import {
-  GlassCard,
-  MessageBanner,
-  PageHeader,
-  SectionLabel,
-  StatusChip,
-  StudioShell,
-} from "@/components/ui/studio"
-import { Send, Loader2, Bot, Sparkles, Square } from "lucide-react"
-import { MarkdownRenderer } from "@/components/ui/markdown-renderer"
-import { qaService } from "@/lib/api/qa"
+import { GlassCard, MessageBanner, StudioShell } from "@/components/ui/studio"
+import { ChatInput } from "@/components/qa/chat-input"
+import { ChatThread } from "@/components/qa/chat-thread"
+import { ConversationList } from "@/components/qa/conversation-list"
+import { MemoryPanel } from "@/components/qa/memory-panel"
+import { qaChatService } from "@/lib/api/qa-chat"
+import type { Conversation, QaMessage } from "@/lib/types"
 
-function isAbortError(error: unknown) {
-  return error instanceof Error && error.name === "AbortError"
+const SUGGESTIONS = [
+  "RuiWen 的知识库能回答哪类问题？",
+  "帮我梳理多轮问答的架构设计",
+  "什么是 RAG 检索增强生成？",
+]
+
+function isAbortError(e: unknown) {
+  return e instanceof Error && e.name === "AbortError"
 }
 
 export default function QAPage() {
-  const { user, tokens } = useAuth()
-  const [question, setQuestion] = useState("")
-  const [answer, setAnswer] = useState("")
+  const { user } = useAuth()
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [convLoading, setConvLoading] = useState(false)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<QaMessage[]>([])
+  const [streamingContent, setStreamingContent] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const streamControllerRef = useRef<AbortController | null>(null)
-  const answerEndRef = useRef<HTMLDivElement>(null)
+  const [memOpen, setMemOpen] = useState(false)
 
-  useEffect(() => {
-    if (answer) {
-      answerEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  const abortRef = useRef<AbortController | null>(null)
+  const streamBuf = useRef("")
+  const activeIdRef = useRef<string | null>(null)
+
+  const refreshConversations = useCallback(async () => {
+    if (!user) return
+    setConvLoading(true)
+    try {
+      setConversations(await qaChatService.listConversations())
+    } catch {
+      // 忽略列表加载错误
+    } finally {
+      setConvLoading(false)
     }
-  }, [answer])
+  }, [user])
 
   useEffect(() => {
-    return () => {
-      streamControllerRef.current?.abort()
+    refreshConversations()
+  }, [refreshConversations])
+
+  // 卸载时中断进行中的流
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  const selectConversation = useCallback(async (id: string) => {
+    abortRef.current?.abort()
+    activeIdRef.current = id
+    setActiveId(id)
+    streamBuf.current = ""
+    setStreamingContent("")
+    setError(null)
+    try {
+      setMessages(await qaChatService.listMessages(id))
+    } catch {
+      setMessages([])
     }
   }, [])
 
-  const startStream = async (q: string, accessToken: string) => {
-    streamControllerRef.current?.abort()
-
-    const controller = new AbortController()
-    streamControllerRef.current = controller
-    setError(null)
-    setAnswer("")
-    setIsStreaming(true)
-
+  const createConversation = useCallback(async () => {
     try {
-      await qaService.streamKnowledgeBase({
-        question: q,
-        topK: 5,
-        maxTokens: 1024,
-        accessToken,
-        signal: controller.signal,
-        onMessage: (message) => {
-          setAnswer((prev) => prev + message)
+      const c = await qaChatService.createConversation()
+      setConversations((prev) => [c, ...prev])
+      activeIdRef.current = c.id
+      setActiveId(c.id)
+      setMessages([])
+      setStreamingContent("")
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "创建会话失败")
+    }
+  }, [])
+
+  const renameConversation = useCallback(async (id: string, title: string) => {
+    try {
+      const c = await qaChatService.renameConversation(id, title)
+      setConversations((prev) => prev.map((x) => (x.id === id ? c : x)))
+    } catch {
+      // 忽略重命名错误
+    }
+  }, [])
+
+  const deleteConversation = useCallback(async (id: string) => {
+    try {
+      await qaChatService.deleteConversation(id)
+      setConversations((prev) => prev.filter((x) => x.id !== id))
+      if (activeIdRef.current === id) {
+        activeIdRef.current = null
+        setActiveId(null)
+        setMessages([])
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除失败")
+    }
+  }, [])
+
+  const finalizeAssistant = useCallback(() => {
+    const text = streamBuf.current
+    streamBuf.current = ""
+    setStreamingContent("")
+    if (text.trim()) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: text,
+          status: "completed",
+          createdAt: new Date().toISOString(),
         },
-      })
-    } catch (err) {
-      if (!isAbortError(err)) {
-        setError(err instanceof Error ? err.message : "请求失败")
+      ])
+    }
+  }, [])
+
+  const send = useCallback(
+    async (question: string) => {
+      if (!user) {
+        setError("请先登录")
+        return
       }
-    } finally {
-      if (streamControllerRef.current === controller) {
-        streamControllerRef.current = null
-        setIsStreaming(false)
+      abortRef.current?.abort()
+
+      // 乐观加入用户消息
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `user-${Date.now()}`,
+          role: "user",
+          content: question,
+          status: "completed",
+          createdAt: new Date().toISOString(),
+        },
+      ])
+      streamBuf.current = ""
+      setStreamingContent("")
+      setError(null)
+      setIsStreaming(true)
+
+      const controller = new AbortController()
+      abortRef.current = controller
+
+      try {
+        await qaChatService.streamChat({
+          question,
+          conversationId: activeIdRef.current ?? undefined,
+          signal: controller.signal,
+          onEvent: (evt) => {
+            if (evt.type === "meta") {
+              // 新建会话场景：后端回传 conversationId
+              if (evt.conversationId && !activeIdRef.current) {
+                activeIdRef.current = evt.conversationId
+                setActiveId(evt.conversationId)
+                refreshConversations()
+              }
+            } else if (evt.type === "delta") {
+              streamBuf.current += evt.content
+              setStreamingContent(streamBuf.current)
+            } else if (evt.type === "error") {
+              setError(evt.message)
+            }
+            // done 事件：await 结束后统一 finalize
+          },
+        })
+        finalizeAssistant()
+      } catch (e) {
+        if (isAbortError(e)) {
+          finalizeAssistant() // 中断也保留已生成内容
+        } else {
+          setError(e instanceof Error ? e.message : "请求失败")
+          finalizeAssistant()
+        }
+      } finally {
+        if (abortRef.current === controller) {
+          abortRef.current = null
+          setIsStreaming(false)
+        }
       }
-    }
-  }
+    },
+    [user, finalizeAssistant, refreshConversations],
+  )
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  const stop = useCallback(() => {
+    abortRef.current?.abort()
+  }, [])
 
-    const q = question.trim()
-    if (!q) {
-      setError("请输入问题")
-      return
-    }
-
-    if (!user || !tokens?.accessToken) {
-      setError("请先登录")
-      return
-    }
-
-    void startStream(q, tokens.accessToken)
-  }
-
-  const handleStop = () => {
-    streamControllerRef.current?.abort()
-    streamControllerRef.current = null
-    setIsStreaming(false)
+  if (!user) {
+    return (
+      <StudioShell centered>
+        <GlassCard className="max-w-md">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 ring-1 ring-white/50">
+              <Sparkles className="size-6 text-violet-500" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800">
+                登录后开启 AI 问答
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                多轮追问、用户记忆，知识库随身问答
+              </p>
+            </div>
+            <Link href="/login?next=/app/qa">
+              <Button>去登录</Button>
+            </Link>
+          </div>
+        </GlassCard>
+      </StudioShell>
+    )
   }
 
   return (
     <StudioShell>
-      <PageHeader
-        badge={
-          <StatusChip icon={Sparkles} tone="violet">
-            知识库问答
-          </StatusChip>
-        }
-        title="AI 问答"
-        subtitle="基于知识库的智能问答系统，实时流式生成"
-        chips={
-          isStreaming ? (
-            <StatusChip icon={Loader2} tone="cyan">
-              生成中
-            </StatusChip>
-          ) : null
-        }
-      />
+      <MessageBanner tone="error" show={!!error}>
+        {error}
+      </MessageBanner>
 
-      {!user && (
-        <GlassCard delay={0.05}>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-slate-500">登录后使用 AI 问答功能</p>
-            <Link href="/login?next=/app/qa">
-              <Button size="sm">去登录</Button>
-            </Link>
-          </div>
-        </GlassCard>
-      )}
-
-      {user && (
-        <GlassCard delay={0.05} disableHover>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <SectionLabel>你的问题</SectionLabel>
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="请输入您的问题..."
-              className="min-h-[110px] w-full resize-none rounded-xl border border-white/60 bg-white/50 p-4 text-sm leading-relaxed outline-none transition-colors placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white/70"
-              rows={4}
-              disabled={isStreaming}
+      <div className="flex h-[calc(100dvh-7.5rem)] gap-4">
+        {/* 左：会话列表（桌面端） */}
+        <aside className="hidden w-64 shrink-0 md:block">
+          <GlassCard className="h-full overflow-hidden p-0" contentClassName="h-full">
+            <ConversationList
+              conversations={conversations}
+              activeId={activeId}
+              loading={convLoading}
+              onSelect={selectConversation}
+              onCreate={createConversation}
+              onRename={renameConversation}
+              onDelete={deleteConversation}
             />
-            <div className="flex justify-end gap-2">
+          </GlassCard>
+        </aside>
+
+        {/* 右：聊天主区 */}
+        <GlassCard
+          className="h-full min-h-0 flex-1 overflow-hidden p-0"
+          contentClassName="flex h-full min-h-0 flex-col"
+        >
+          {/* 顶部工具栏 */}
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/40 px-4 py-3 md:px-6">
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 ring-1 ring-white/50">
+                <Sparkles className="size-4 text-violet-500" />
+              </div>
+              <div className="leading-tight">
+                <div className="text-sm font-semibold text-slate-800">AI 问答</div>
+                <div className="text-[11px] text-slate-400">知识库 · 多轮记忆</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
               <Button
-                type="submit"
-                disabled={isStreaming || !question.trim()}
-                className="gap-1.5 bg-gradient-to-r from-cyan-500 to-violet-600 text-white"
+                variant="ghost"
+                size="sm"
+                onClick={createConversation}
+                className="gap-1 md:hidden"
               >
-                {isStreaming ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Send className="size-4" />
-                )}
-                {isStreaming ? "生成中…" : "发送"}
+                <Plus className="size-4" />
+                新建
               </Button>
               <Button
-                type="button"
                 variant="outline"
-                onClick={handleStop}
-                disabled={!isStreaming}
-                className="gap-1.5 border-white/60 bg-white/60 backdrop-blur-md"
+                size="sm"
+                onClick={() => setMemOpen(true)}
+                className="gap-1"
               >
-                <Square className="size-3.5" />
-                停止
+                <Brain className="size-3.5" />
+                <span className="hidden sm:inline">用户记忆</span>
+                <span className="sm:hidden">记忆</span>
               </Button>
             </div>
-          </form>
+          </div>
 
-          <div className="mt-4">
-            <MessageBanner tone="error" show={!!error}>
-              {error}
-            </MessageBanner>
-          </div>
-        </GlassCard>
-      )}
+          {/* 消息区（占满剩余空间，内部滚动） */}
+          <ChatThread
+            className="min-h-0 flex-1"
+            messages={messages}
+            streamingContent={streamingContent}
+            isStreaming={isStreaming}
+            suggestions={SUGGESTIONS}
+            onSuggestion={send}
+          />
 
-      {(answer || isStreaming) && (
-        <GlassCard delay={0.1} disableHover contentClassName="flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600">
-              <Bot className="size-4" />
-            </div>
-            <SectionLabel>AI 回答</SectionLabel>
-          </div>
-          <div className="prose prose-sm max-w-none">
-            {answer ? (
-              <MarkdownRenderer content={answer} className="prose-sm" />
-            ) : (
-              <span className="text-sm text-slate-400">
-                {isStreaming ? "等待生成…" : ""}
-              </span>
-            )}
-          </div>
-          <div ref={answerEndRef} />
+          {/* 输入区 */}
+          <ChatInput onSend={send} onStop={stop} isStreaming={isStreaming} />
         </GlassCard>
-      )}
+      </div>
+
+      <MemoryPanel open={memOpen} onOpenChange={setMemOpen} />
     </StudioShell>
   )
 }
