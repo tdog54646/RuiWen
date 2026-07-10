@@ -291,6 +291,35 @@ public class CounterServiceImpl implements CounterService {
     }
 
     /**
+     * 清除实体的全部计数数据（位图分片事实层、SDS 快照、聚合桶），并返回清除前的 like/fav 计数。
+     * 用于实体被删除时回收计数事实，避免后续基于位图的重建把已删实体的点赞/收藏误计入。
+     * @return 清除前的计数（key: like/fav），用于上游扣减作者维度计数
+     */
+    @Override
+    public Map<String, Long> clearEntityCounts(String entityType, String entityId) {
+        // 先基于位图事实层读取最终的 like/fav（必须在删除位图之前读取），用于上游扣减作者维度计数
+        long like = bitCountShardsPipelined("like", entityType, entityId);
+        long fav = bitCountShardsPipelined("fav", entityType, entityId);
+        // 清理该实体的全部计数 key：位图分片 / SDS 快照 / 聚合桶
+        deleteBitmapShards("like", entityType, entityId);
+        deleteBitmapShards("fav", entityType, entityId);
+        redis.delete(CounterKeys.sdsKey(entityType, entityId));
+        redis.delete(CounterKeys.aggKey(entityType, entityId));
+        return Map.of("like", like, "fav", fav);
+    }
+
+    /**
+     * 删除指定位图指标的所有分片键。
+     * 说明：当前使用 KEYS 枚举分片（与读取路径一致），生产建议维护索引集合替代。
+     */
+    private void deleteBitmapShards(String metric, String etype, String eid) {
+        Set<String> keys = redis.keys(String.format("bm:%s:%s:%s:*", metric, etype, eid));
+        if (keys != null && !keys.isEmpty()) {
+            redis.delete(keys);
+        }
+    }
+
+    /**
      * 是否点赞判定：基于分片位图在分片内做位测试。
      * 毫秒级读取，不依赖计数快照。
      */

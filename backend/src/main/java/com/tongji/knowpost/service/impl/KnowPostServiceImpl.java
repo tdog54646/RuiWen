@@ -267,6 +267,18 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
+        // 扣减作者维度计数（发文/获赞/获藏），并清理该文章的计数事实层（位图/SDS/聚合桶），
+        // 避免后续基于位图的重建把已删文章的点赞/收藏再次计入。
+        try {
+            Map<String, Long> counts = counterService.clearEntityCounts("knowpost", String.valueOf(id));
+            userCounterService.incrementPosts(creatorId, -1);
+            long like = counts.getOrDefault("like", 0L);
+            long fav = counts.getOrDefault("fav", 0L);
+            if (like > 0) userCounterService.incrementLikesReceived(creatorId, -(int) like);
+            if (fav > 0) userCounterService.incrementFavsReceived(creatorId, -(int) fav);
+            // 同步清理 Feed 维度的计数快照，避免详情/Feed 读到陈旧赞数
+            redis.delete("feed:count:" + id);
+        } catch (Exception ignored) {}
         enqueueKnowPostEvent(id, "KnowPostDeleted", "delete");
         feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
         feedCacheService.doubleDeleteMy(creatorId, 200);

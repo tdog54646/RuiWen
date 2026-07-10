@@ -34,6 +34,13 @@ public interface CounterService {
     Map<String, Map<String, Long>> getCountsBatch(String entityType, List<String> entityIds, List<String> metrics);
 
     /**
+     * 清除实体的全部计数数据（位图分片/SDS 快照/聚合桶），并返回清除前的 like/fav 计数。
+     * 用于实体删除时回收计数事实，避免后续基于位图的重建把已删实体的点赞/收藏误计入。
+     * @return 清除前的计数（key: like/fav），供上游扣减作者维度计数
+     */
+    Map<String, Long> clearEntityCounts(String entityType, String entityId);
+
+    /**
      * 判断是否点赞/收藏（位图）。
      */
     boolean isLiked(String entityType, String entityId, long userId);
