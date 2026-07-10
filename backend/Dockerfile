@@ -13,8 +13,9 @@ RUN mvn -B -DskipTests package
 FROM ${JRE_IMAGE}
 WORKDIR /app
 
-# 安装 CJK 字体，供知文导出 PDF 渲染中文（openhtmltopdf 需显式注册字体文件）
-RUN apk add --no-cache font-noto-cjk font-dejavu
+# 安装 CJK 字体，供知文导出 PDF 渲染中文。
+# font-wqy-zenhei 为 TrueType（可子集化，PDF 体积小）；font-noto-cjk 为 CFF 回退（仅渲染用）。
+RUN apk add --no-cache font-wqy-zenhei font-noto-cjk font-dejavu
 
 ENV JAVA_OPTS="-Djava.awt.headless=true"
 ENV SERVER_PORT=8080

@@ -1,5 +1,6 @@
 package com.tongji.knowpost.export;
 
+import com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder.FontStyle;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import com.openhtmltopdf.util.XRLog;
 import lombok.RequiredArgsConstructor;
@@ -69,17 +70,35 @@ public class PdfExportService {
         bodyHtml = embedRemoteImages(bodyHtml);
         String html = wrapHtml(title, author, dateText, tags, description, bodyHtml);
 
+        File fontFile = resolveFont();
+        if (fontFile == null) {
+            log.warn("未找到可用的 CJK 字体，PDF 中文可能无法正常显示。可通过 app.pdf.font-search-paths 配置。");
+        }
+        // PDFBox 2.0 无法 subset CFF 轮廓字体（会抛 OTF fonts do not have a glyf table），
+        // 因此仅对 TrueType 字体启用子集化以缩小体积；CFF 字体关闭子集化（整字体内嵌）。
+        boolean subset = fontFile != null && !isCffFont(fontFile);
+        try {
+            return doRender(html, fontFile, subset);
+        } catch (Exception e) {
+            if (subset && fontFile != null) {
+                // 子集化异常（如 TTC TrueType 子集化的边缘情况）时，回退整字体内嵌再试一次
+                log.warn("PDF 子集化渲染失败，回退关闭子集化重试：{}", e.getMessage());
+                return doRender(html, fontFile, false);
+            }
+            throw e;
+        }
+    }
+
+    private byte[] doRender(String html, File fontFile, boolean subset) {
         PdfRendererBuilder builder = new PdfRendererBuilder();
         builder.useFastMode();
-        File fontFile = resolveFont();
         if (fontFile != null) {
             try {
-                builder.useFont(fontFile, props.getFontFamily());
+                builder.useFont(fontFile, props.getFontFamily(), 400, FontStyle.NORMAL, subset);
+                log.info("PDF 字体 font={} subset={}", fontFile.getName(), subset);
             } catch (Exception e) {
                 log.warn("注册 PDF 字体失败 font={}, 将使用默认字体：{}", fontFile.getAbsolutePath(), e.getMessage());
             }
-        } else {
-            log.warn("未找到可用的 CJK 字体，PDF 中文可能无法正常显示。可通过 app.pdf.font-search-paths 配置。");
         }
 
         try {
@@ -192,6 +211,44 @@ public class PdfExportService {
             }
         }
         return null;
+    }
+
+    /**
+     * 判断字体是否为 CFF 轮廓（兼容 TTC 容器内的字体）。
+     * PDFBox 2.0 无法 subset CFF 字体，需据此关闭子集化。
+     * 通过读取 sfnt 表目录：有 'glyf' 表为 TrueType，有 'CFF ' 表为 CFF OpenType。
+     */
+    private boolean isCffFont(File font) {
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(font, "r")) {
+            long fontOffset = 0;
+            if (raf.length() >= 16) {
+                byte[] head = new byte[4];
+                raf.readFully(head);
+                if (head[0] == 't' && head[1] == 't' && head[2] == 'c' && head[3] == 'f') {
+                    // TTC 容器：跳过 version(4)+numFonts(4)，读取第一个字体的偏移
+                    raf.skipBytes(4);
+                    raf.skipBytes(4);
+                    fontOffset = Integer.toUnsignedLong(raf.readInt());
+                }
+            }
+            raf.seek(fontOffset);
+            raf.skipBytes(4);                  // sfnt version
+            int numTables = raf.readUnsignedShort();
+            raf.skipBytes(6);                  // searchRange + entrySelector + rangeShift
+            boolean hasGlyf = false;
+            boolean hasCff = false;
+            for (int i = 0; i < numTables; i++) {
+                byte[] t = new byte[4];
+                raf.readFully(t);
+                raf.skipBytes(12);             // checksum + offset + length
+                if (t[0] == 'g' && t[1] == 'l' && t[2] == 'y' && t[3] == 'f') hasGlyf = true;
+                if (t[0] == 'C' && t[1] == 'F' && t[2] == 'F' && t[3] == ' ') hasCff = true;
+            }
+            return hasCff && !hasGlyf;
+        } catch (Exception e) {
+            log.debug("字体类型探测失败 font={}：{}", font.getAbsolutePath(), e.getMessage());
+            return true; // 探测失败保守按 CFF 处理（关闭子集化，避免崩溃）
+        }
     }
 
     private String escape(String text) {

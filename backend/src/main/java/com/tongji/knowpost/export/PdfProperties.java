@@ -21,13 +21,16 @@ public class PdfProperties {
 
     /**
      * 字体查找路径，按顺序取第一个存在的文件注册为 {@link #fontFamily}。
+     * 优先选择 TrueType（含 glyf 表）字体：PDFBox 2.0 可对其子集化，PDF 体积小；
+     * CFF 轮廓字体（Noto CJK）无法子集化，作为回退（整字体内嵌）。
      */
     private List<String> fontSearchPaths = List.of(
-            // 容器：Alpine font-noto-cjk
-            "/usr/share/fonts/noto/NotoSansCJKsc-Regular.otf",
-            "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
+            // 容器：WenQuanYi 正黑（TrueType，可子集化，PDF 体积小）
             "/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc",
-            // 本地开发：macOS
+            // 容器：Noto CJK（CFF 轮廓，无法子集化，回退用）
+            "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto/NotoSansCJKsc-Regular.otf",
+            // 本地开发：macOS（Arial Unicode 为 TrueType，可子集化）
             "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
             "/System/Library/Fonts/PingFang.ttc"
     );
