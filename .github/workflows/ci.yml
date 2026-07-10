@@ -78,7 +78,8 @@ jobs:
   build:
     name: Build images & deploy
     needs: [backend, frontend]
-    if: github.ref == 'refs/heads/main'
+    # 临时关闭：等换服务器/解决 deploy hook 连接重置问题后再打开（去掉下一行的 false）
+    if: false && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # 同一分支同时只跑一个部署，且保留最近一次、取消正在进行的旧部署
