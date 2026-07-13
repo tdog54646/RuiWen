@@ -14,7 +14,7 @@ import { qaChatService } from "@/lib/api/qa-chat"
 import type { Conversation, QaMessage } from "@/lib/types"
 
 const SUGGESTIONS = [
-  "RuiWen 的知识库能回答哪类问题？",
+  "Line 的知识库能回答哪些问题？",
   "帮我梳理多轮问答的架构设计",
   "什么是 RAG 检索增强生成？",
 ]
