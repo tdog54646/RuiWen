@@ -12,13 +12,33 @@ CREATE TABLE IF NOT EXISTS users (
     birthday DATE NULL,
     school VARCHAR(128) NULL,
     tags_json JSON NULL,
+    role VARCHAR(16) NOT NULL DEFAULT 'USER' COMMENT 'USER / ADMIN / SUPER_ADMIN',
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE / BANNED',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uk_users_phone (phone),
     UNIQUE KEY uk_users_email (email),
-    UNIQUE KEY uk_users_zg_id (zg_id)
+    UNIQUE KEY uk_users_zg_id (zg_id),
+    KEY ix_users_role (role),
+    KEY ix_users_status (status),
+    KEY ix_users_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 系统配置表：key-value 存储，用于注册策略、密码策略、站点公告等可热更新的配置。
+CREATE TABLE IF NOT EXISTS system_config (
+    config_key VARCHAR(64) NOT NULL,
+    config_value TEXT NOT NULL,
+    description VARCHAR(255) NULL,
+    updated_by BIGINT UNSIGNED NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (config_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 预置默认注册策略：手机号 + 验证码注册。
+INSERT INTO system_config (config_key, config_value, description)
+VALUES ('registration.policy', '{"enabled":true,"mode":"PHONE_CODE"}', '注册策略：enabled 是否开放注册；mode 取值 EMAIL_PASSWORD(邮箱+密码免验证码) / PHONE_CODE(手机号+验证码)')
+ON DUPLICATE KEY UPDATE config_key = config_key;
 
 CREATE TABLE IF NOT EXISTS login_logs (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -30,7 +50,10 @@ CREATE TABLE IF NOT EXISTS login_logs (
     status VARCHAR(16) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    KEY ix_login_logs_user_created_at (user_id, created_at)
+    KEY ix_login_logs_user_created_at (user_id, created_at),
+    KEY ix_login_logs_created_at (created_at),
+    KEY ix_login_logs_status_created_at (status, created_at),
+    KEY ix_login_logs_channel_created_at (channel, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 知文（KnowPost）主表
