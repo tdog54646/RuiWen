@@ -17,8 +17,8 @@ export type SendCodeResponse = {
 export type RegisterRequest = {
   identifierType: IdentifierType
   identifier: string
-  code: string
-  password: string
+  code?: string
+  password?: string
   agreeTerms: boolean
 }
 
@@ -56,6 +56,7 @@ export type AuthUserResponse = {
   gender?: Gender
   skills?: string[]
   tagJson?: string
+  role?: UserRole
 }
 
 export type AuthResponse = {
@@ -90,6 +91,18 @@ export type PublicUserProfile = {
 }
 
 export type Gender = "MALE" | "FEMALE" | "OTHER" | "UNKNOWN"
+
+/** 用户角色：USER / ADMIN / SUPER_ADMIN */
+export type UserRole = "USER" | "ADMIN" | "SUPER_ADMIN"
+
+/** 注册方式：邮箱+密码（免验证码） / 手机号+验证码 */
+export type RegistrationMode = "EMAIL_PASSWORD" | "PHONE_CODE"
+
+/** 公开注册策略（注册页首屏读取） */
+export type RegistrationConfig = {
+  enabled: boolean
+  mode: RegistrationMode
+}
 
 export type ErrorResponse = {
   code: string

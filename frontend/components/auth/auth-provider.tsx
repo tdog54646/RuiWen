@@ -48,6 +48,8 @@ export function AuthProviderWrapper({ children }: { children: React.ReactNode })
   // 避免惰性初始化器从 localStorage 恢复登录态导致 hydration mismatch
   // （SSR 无 localStorage → user=null，客户端首帧有 → user=已登录）。
   const [hydrated, setHydrated] = useState(false)
+  // 已知误报：首帧 hydration 守卫必须同步置位，与外部系统无关，抑制该规则。
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setHydrated(true), [])
   const fetchingRef = useRef<Promise<void> | null>(null)
 

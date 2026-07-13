@@ -6,6 +6,7 @@ import type {
   LogoutRequest,
   PublicUserProfile,
   RefreshResponse,
+  RegistrationConfig,
   RegisterRequest,
   RegisterResponse,
   ResetPasswordRequest,
@@ -16,6 +17,11 @@ import type {
 const AUTH_PREFIX = "/api/auth"
 
 export const authService = {
+  getRegistrationConfig: () =>
+    apiFetch<RegistrationConfig>(`${AUTH_PREFIX}/registration-config`, {
+      accessToken: null,
+    }),
+
   sendCode: (payload: SendCodeRequest) =>
     apiFetch<SendCodeResponse>(`${AUTH_PREFIX}/send-code`, {
       method: "POST",
