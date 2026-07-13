@@ -26,6 +26,8 @@ public class JwtService {
 
     private static final String CLAIM_TOKEN_TYPE = "token_type";
     private static final String CLAIM_USER_ID = "uid";
+    /** 角色 claim：USER / ADMIN / SUPER_ADMIN，用于资源服务器鉴权。 */
+    private static final String CLAIM_ROLE = "role";
 
     private final JwtEncoder jwtEncoder;
     private final JwtDecoder jwtDecoder;
@@ -82,6 +84,7 @@ public class JwtService {
                 .claim(CLAIM_TOKEN_TYPE, tokenType)
                 .claim(CLAIM_USER_ID, user.getId())
                 .claim("nickname", user.getNickname())
+                .claim(CLAIM_ROLE, user.getRole())
                 .build();
         return jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }
@@ -145,5 +148,16 @@ public class JwtService {
      */
     public String extractTokenId(Jwt jwt) {
         return jwt.getId();
+    }
+
+    /**
+     * 从 access token 中提取角色 claim；缺失时回退为 {@code USER}（兼容历史无 role 的令牌）。
+     *
+     * @param jwt 已解析的 JWT。
+     * @return 角色字符串。
+     */
+    public String extractRole(Jwt jwt) {
+        Object claim = jwt.getClaims().get(CLAIM_ROLE);
+        return claim != null ? claim.toString() : "USER";
     }
 }

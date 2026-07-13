@@ -19,7 +19,7 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     /**
-     * 业务异常统一返回：HTTP 400。
+     * 业务异常统一返回：默认 HTTP 400；权限/封禁类错误返回 403。
      *
      * @param ex 业务异常，包含错误码与消息。
      * @return 响应体：code/message。
@@ -29,7 +29,11 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new HashMap<>();
         body.put("code", ex.getErrorCode().getCode());
         body.put("message", ex.getMessage());
-        return ResponseEntity.badRequest().body(body);
+        HttpStatus status = switch (ex.getErrorCode()) {
+            case FORBIDDEN, USER_BANNED, LAST_SUPER_ADMIN -> HttpStatus.FORBIDDEN;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(body);
     }
 
     /**

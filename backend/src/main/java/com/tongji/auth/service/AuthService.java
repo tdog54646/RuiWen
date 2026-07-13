@@ -7,12 +7,16 @@ import com.tongji.auth.exception.BusinessException;
 import com.tongji.auth.exception.ErrorCode;
 import com.tongji.auth.model.ClientInfo;
 import com.tongji.auth.model.IdentifierType;
+import com.tongji.auth.registration.RegistrationMode;
+import com.tongji.auth.registration.RegistrationPolicy;
+import com.tongji.auth.registration.RegistrationPolicyService;
 import com.tongji.auth.token.JwtService;
 import com.tongji.auth.token.RefreshTokenStore;
 import com.tongji.auth.token.TokenPair;
 import com.tongji.auth.util.IdentifierValidator;
 import com.tongji.auth.verification.*;
 import com.tongji.user.domain.User;
+import com.tongji.user.domain.UserStatus;
 import com.tongji.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -52,6 +56,10 @@ public class AuthService {
     private final RefreshTokenStore refreshTokenStore;
     private final LoginLogService loginLogService;
     private final AuthProperties authProperties;
+    private final RegistrationPolicyService registrationPolicyService;
+
+    /** 新用户默认头像。 */
+    private static final String DEFAULT_AVATAR = "https://sljava123.oss-cn-hangzhou.aliyuncs.com/avatars/1-1773801182172.jpg";
 
     /**
      * 发送验证码并返回过期信息。
@@ -72,6 +80,21 @@ public class AuthService {
         if ((request.scene() == VerificationScene.LOGIN || request.scene() == VerificationScene.RESET_PASSWORD) && !exists) {
             throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND);
         }
+        // 注册场景下按注册策略收敛验证码发送：
+        // - 邮箱+密码模式：注册无需验证码，拒绝发送；
+        // - 手机号+验证码模式：仅允许手机号取注册码。
+        if (request.scene() == VerificationScene.REGISTER) {
+            RegistrationPolicy policy = registrationPolicyService.getPolicy();
+            if (!policy.enabled()) {
+                throw new BusinessException(ErrorCode.REGISTRATION_DISABLED);
+            }
+            if (policy.mode() == RegistrationMode.EMAIL_PASSWORD) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "当前注册模式无需验证码");
+            }
+            if (request.identifierType() != IdentifierType.PHONE) {
+                throw new BusinessException(ErrorCode.REGISTRATION_MODE_MISMATCH, "当前注册模式仅支持手机号");
+            }
+        }
         SendCodeResult result = verificationService.sendCode(request.scene(), normalized);
         return new SendCodeResponse(result.identifier(), result.scene(), result.expireSeconds());
     }
@@ -90,6 +113,10 @@ public class AuthService {
         if (!request.agreeTerms()) {
             throw new BusinessException(ErrorCode.TERMS_NOT_ACCEPTED);
         }
+        RegistrationPolicy policy = registrationPolicyService.getPolicy();
+        if (!policy.enabled()) {
+            throw new BusinessException(ErrorCode.REGISTRATION_DISABLED);
+        }
         validateIdentifier(request.identifierType(), request.identifier());
         String identifier = normalizeIdentifier(request.identifierType(), request.identifier());
         if (identifierExists(request.identifierType(), identifier)) {
@@ -100,18 +127,32 @@ public class AuthService {
                 .phone(request.identifierType() == IdentifierType.PHONE ? identifier : null)
                 .email(request.identifierType() == IdentifierType.EMAIL ? identifier : null)
                 .nickname(generateNickname())
-                .avatar("https://sljava123.oss-cn-hangzhou.aliyuncs.com/avatars/1-1773801182172.jpg")
+                .avatar(DEFAULT_AVATAR)
                 .bio(null)
                 .tagsJson("[]")
                 .build();
 
-        if (StringUtils.hasText(request.password())) {
+        if (policy.mode() == RegistrationMode.EMAIL_PASSWORD) {
+            // 模式 A：邮箱 + 密码，无需验证码
+            if (request.identifierType() != IdentifierType.EMAIL) {
+                throw new BusinessException(ErrorCode.REGISTRATION_MODE_MISMATCH, "当前注册模式仅支持邮箱注册");
+            }
+            if (!StringUtils.hasText(request.password())) {
+                throw new BusinessException(ErrorCode.PASSWORD_POLICY_VIOLATION, "密码不能为空");
+            }
             validatePassword(request.password());
             user.setPasswordHash(passwordEncoder.encode(request.password().trim()));
+        } else {
+            // 模式 B：手机号 + 验证码
+            if (request.identifierType() != IdentifierType.PHONE) {
+                throw new BusinessException(ErrorCode.REGISTRATION_MODE_MISMATCH, "当前注册模式仅支持手机号注册");
+            }
+            ensureVerificationSuccess(verificationService.verify(VerificationScene.REGISTER, identifier, request.code()));
+            if (StringUtils.hasText(request.password())) {
+                validatePassword(request.password());
+                user.setPasswordHash(passwordEncoder.encode(request.password().trim()));
+            }
         }
-
-        ensureVerificationSuccess(verificationService.verify(VerificationScene.REGISTER, identifier, request.code()));
-
 
         userService.createUser(user);
         TokenPair tokenPair = jwtService.issueTokenPair(user);
@@ -139,6 +180,7 @@ public class AuthService {
             throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND);
         }
         User user = userOptional.get();
+        ensureNotBanned(user);
         String channel;
         if (StringUtils.hasText(request.password())) {
             channel = "PASSWORD";
@@ -182,6 +224,7 @@ public class AuthService {
         }
 
         User user = findUserById(userId).orElseThrow(() -> new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND));
+        ensureNotBanned(user);
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         refreshTokenStore.revokeToken(userId, tokenId);
         storeRefreshToken(userId, tokenPair);
@@ -257,8 +300,21 @@ public class AuthService {
                 response.bio(),
                 response.gender(),
                 response.tagJson(),
-                null
+                null,
+                response.role()
         );
+    }
+
+    /**
+     * 校验用户是否被封禁，封禁则抛业务异常。
+     *
+     * @param user 用户实体。
+     * @throws BusinessException 当用户状态为 BANNED 时抛出。
+     */
+    private void ensureNotBanned(User user) {
+        if (user != null && UserStatus.BANNED.equals(user.getStatus())) {
+            throw new BusinessException(ErrorCode.USER_BANNED);
+        }
     }
 
     /**
@@ -404,7 +460,8 @@ public class AuthService {
                 user.getBio(),
                 user.getGender(),
                 user.getTagsJson(),
-                user.getEmail()
+                user.getEmail(),
+                user.getRole()
         );
     }
 

@@ -137,6 +137,15 @@ auth:
     bcrypt-strength: 12
     min-length: 8
 
+# ---------------------------------------------------------------------------
+# 后台管理：首个超级管理员引导。启动时若 identifier 对应用户存在则提升为 SUPER_ADMIN。
+# 可用手机号或邮箱（按邮箱优先、其次手机号匹配）。也可用 deploy/mysql/migration-admin.sql 手动提升。
+# ---------------------------------------------------------------------------
+admin:
+  bootstrap:
+    enabled: ${ADMIN_BOOTSTRAP_ENABLED:false}
+    identifier: ${ADMIN_BOOTSTRAP_IDENTIFIER:}
+
 logging:
   level:
     root: INFO

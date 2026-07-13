@@ -29,6 +29,12 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    private final JwtRoleAuthenticationConverter jwtRoleAuthenticationConverter;
+
+    public SecurityConfig(JwtRoleAuthenticationConverter jwtRoleAuthenticationConverter) {
+        this.jwtRoleAuthenticationConverter = jwtRoleAuthenticationConverter;
+    }
+
     /**
      * 配置 Spring Security 过滤链。
      *
@@ -37,7 +43,8 @@ public class SecurityConfig {
      * - 启用 CORS；
      * - 使用无状态会话策略；
      * - 公开认证接口与健康检查，其余接口需鉴权；
-     * - 启用资源服务器的 JWT 校验。
+     * - 后台管理接口 {@code /api/admin/**} 仅 ADMIN/SUPER_ADMIN 可访问；
+     * - 启用资源服务器的 JWT 校验，并把 role claim 映射为权限。
      *
      * @param http Spring 的 {@link HttpSecurity} 构建器。
      * @return 构建完成的 {@link SecurityFilterChain}。
@@ -66,6 +73,8 @@ public class SecurityConfig {
                         // 知文详情页热点问答允许匿名访问
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/qa/hotquestion").permitAll()
                         .requestMatchers("/api/leaderboards/top").permitAll()
+                        // 公开注册策略查询：注册页首屏需匿名读取当前注册模式
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auth/registration-config").permitAll()
                         .requestMatchers(
                                 "/api/auth/send-code",
                                 "/api/auth/register",
@@ -74,9 +83,12 @@ public class SecurityConfig {
                                 "/api/auth/logout",
                                 "/api/auth/password/reset"
                         ).permitAll()
+                        // 后台管理接口：仅 ADMIN / SUPER_ADMIN 可访问（SUPER_ADMIN 同时拥有 ROLE_ADMIN）
+                        .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .anyRequest().authenticated()
                 )
-                .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
+                .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt
+                        .jwtAuthenticationConverter(jwtRoleAuthenticationConverter)));
         return http.build();
     }
 

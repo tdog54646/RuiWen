@@ -17,7 +17,12 @@ public enum ErrorCode {
     TERMS_NOT_ACCEPTED("TERMS_NOT_ACCEPTED", "请先同意服务条款"),
     REFRESH_TOKEN_INVALID("REFRESH_TOKEN_INVALID", "刷新令牌无效"),
     BAD_REQUEST("BAD_REQUEST", "请求参数错误"),
-    INTERNAL_ERROR("INTERNAL_ERROR", "服务器内部错误");
+    INTERNAL_ERROR("INTERNAL_ERROR", "服务器内部错误"),
+    USER_BANNED("USER_BANNED", "账号已被封禁"),
+    FORBIDDEN("FORBIDDEN", "无操作权限"),
+    LAST_SUPER_ADMIN("LAST_SUPER_ADMIN", "不能降级或封禁最后一个超级管理员"),
+    REGISTRATION_DISABLED("REGISTRATION_DISABLED", "注册功能已关闭"),
+    REGISTRATION_MODE_MISMATCH("REGISTRATION_MODE_MISMATCH", "当前注册模式不支持该方式");
 
     private final String code;
     private final String defaultMessage;

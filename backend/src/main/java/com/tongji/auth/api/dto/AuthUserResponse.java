@@ -18,6 +18,7 @@ public record AuthUserResponse(
         String bio,
         String gender,
         String tagJson,
-        String email
+        String email,
+        String role
 ) {
 }

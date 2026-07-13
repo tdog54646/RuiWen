@@ -2,6 +2,8 @@ package com.tongji.auth.api;
 
 import com.tongji.auth.api.dto.*;
 import com.tongji.auth.model.ClientInfo;
+import com.tongji.auth.registration.RegistrationPolicy;
+import com.tongji.auth.registration.RegistrationPolicyService;
 import com.tongji.auth.service.AuthService;
 import com.tongji.auth.token.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,6 +30,18 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtService jwtService;
+    private final RegistrationPolicyService registrationPolicyService;
+
+    /**
+     * 查询当前注册策略（公开接口，供注册页首屏匿名读取以决定渲染哪种表单）。
+     *
+     * @return 注册策略：是否开放注册 + 注册方式。
+     */
+    @GetMapping("/registration-config")
+    public RegistrationConfigResponse registrationConfig() {
+        RegistrationPolicy policy = registrationPolicyService.getPolicy();
+        return new RegistrationConfigResponse(policy.enabled(), policy.mode().name());
+    }
 
     /**
      * 发送短信/邮箱验证码。
