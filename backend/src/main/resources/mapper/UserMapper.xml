@@ -17,6 +17,8 @@
         <result column="birthday" property="birthday"/>
         <result column="school" property="school"/>
         <result column="tags_json" property="tagsJson"/>
+        <result column="role" property="role"/>
+        <result column="status" property="status"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
     </resultMap>
@@ -130,6 +132,78 @@
         <foreach collection="ids" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
+    </select>
+
+    <!-- ===================== 后台管理查询 ===================== -->
+
+    <update id="updateRole">
+        UPDATE users
+        SET role      = #{role},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE users
+        SET status     = #{status},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="countByRole" resultType="long">
+        SELECT COUNT(*)
+        FROM users
+        WHERE role = #{role}
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*)
+        FROM users
+    </select>
+
+    <select id="countCreatedSince" resultType="long">
+        SELECT COUNT(*)
+        FROM users
+        WHERE created_at &gt;= #{since}
+    </select>
+
+    <!-- 后台用户列表/搜索：按关键字（昵称/手机号/邮箱）+ 角色 + 状态筛选，按创建时间倒序分页 -->
+    <select id="searchUsers" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (nickname LIKE CONCAT('%', #{keyword}, '%')
+                  OR phone LIKE CONCAT('%', #{keyword}, '%')
+                  OR email LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="role != null and role != ''">
+                AND role = #{role}
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+        </where>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countSearchUsers" resultType="long">
+        SELECT COUNT(*)
+        FROM users
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (nickname LIKE CONCAT('%', #{keyword}, '%')
+                  OR phone LIKE CONCAT('%', #{keyword}, '%')
+                  OR email LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="role != null and role != ''">
+                AND role = #{role}
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+        </where>
     </select>
 
 </mapper>

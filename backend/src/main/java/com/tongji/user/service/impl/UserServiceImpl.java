@@ -1,6 +1,8 @@
 package com.tongji.user.service.impl;
 
 import com.tongji.user.domain.User;
+import com.tongji.user.domain.UserRole;
+import com.tongji.user.domain.UserStatus;
 import com.tongji.user.mapper.UserMapper;
 import com.tongji.user.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -73,6 +76,7 @@ public class UserServiceImpl implements UserService {
 
     /**
      * 创建用户，写入创建与更新时间并持久化。
+     * <p>同时兜底 role/status 默认值（USER / ACTIVE），保证入库与内存对象一致。</p>
      *
      * @param user 待创建的用户实体。
      * @return 持久化后的用户实体。
@@ -82,6 +86,12 @@ public class UserServiceImpl implements UserService {
         Instant now = Instant.now();
         user.setCreatedAt(now);
         user.setUpdatedAt(now);
+        if (user.getRole() == null) {
+            user.setRole(UserRole.USER);
+        }
+        if (user.getStatus() == null) {
+            user.setStatus(UserStatus.ACTIVE);
+        }
         userMapper.insert(user);
         return user;
     }
@@ -95,5 +105,50 @@ public class UserServiceImpl implements UserService {
     public void updatePassword(User user) {
         user.setUpdatedAt(Instant.now());
         userMapper.updatePassword(user.getId(), user.getPasswordHash());
+    }
+
+    @Transactional
+    @Override
+    public void updateRole(long id, String role) {
+        userMapper.updateRole(id, role);
+    }
+
+    @Transactional
+    @Override
+    public void updateStatus(long id, String status) {
+        userMapper.updateStatus(id, status);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public long countByRole(String role) {
+        return userMapper.countByRole(role);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public long countAll() {
+        return userMapper.countAll();
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public long countCreatedSince(Instant since) {
+        return userMapper.countCreatedSince(since);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public List<User> searchUsers(String keyword, String role, String status, int page, int size) {
+        int p = Math.max(page, 1);
+        int s = Math.min(Math.max(size, 1), 100);
+        int offset = (p - 1) * s;
+        return userMapper.searchUsers(keyword, role, status, offset, s);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public long countSearchUsers(String keyword, String role, String status) {
+        return userMapper.countSearchUsers(keyword, role, status);
     }
 }

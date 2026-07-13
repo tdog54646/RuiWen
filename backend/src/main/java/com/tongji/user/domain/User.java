@@ -25,7 +25,12 @@ public class User {
     private LocalDate birthday;
     private String school;
     private String tagsJson;
+    /** 角色：USER / ADMIN / SUPER_ADMIN，新建用户默认 USER（依赖 DB DEFAULT 与 createUser 兜底）。 */
+    @Builder.Default
+    private String role = UserRole.USER;
+    /** 状态：ACTIVE / BANNED，新建用户默认 ACTIVE。 */
+    @Builder.Default
+    private String status = UserStatus.ACTIVE;
     private Instant createdAt;
     private Instant updatedAt;
 }
-
