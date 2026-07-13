@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tongji.admin.mapper.AdminQaMapper">
+
+    <!-- ===== 会话 ===== -->
+
+    <select id="listConversations" resultType="com.tongji.admin.dto.AdminConversationItem">
+        SELECT
+            CAST(c.id AS CHAR)   AS id,
+            c.user_id            AS userId,
+            u.nickname           AS userNickname,
+            c.title,
+            c.message_count      AS messageCount,
+            c.last_message_at    AS lastMessageAt,
+            c.deleted,
+            c.created_at         AS createdAt
+        FROM qa_conversations c
+        LEFT JOIN users u ON c.user_id = u.id
+        <where>
+            <if test="!includeDeleted">
+                AND c.deleted = 0
+            </if>
+            <if test="userId != null">
+                AND c.user_id = #{userId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND c.title LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+        ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countConversations" resultType="long">
+        SELECT COUNT(*)
+        FROM qa_conversations c
+        <where>
+            <if test="!includeDeleted">
+                AND c.deleted = 0
+            </if>
+            <if test="userId != null">
+                AND c.user_id = #{userId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND c.title LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+    </select>
+
+    <select id="findUserIdByConversation" resultType="java.lang.Long">
+        SELECT user_id FROM qa_conversations WHERE id = #{id}
+    </select>
+
+    <update id="softDeleteConversation">
+        UPDATE qa_conversations
+        SET deleted = 1, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <!-- ===== 消息 ===== -->
+
+    <select id="listMessages" resultType="com.tongji.admin.dto.AdminMessageItem">
+        SELECT
+            CAST(m.id AS CHAR)        AS id,
+            m.conversation_id         AS conversationId,
+            m.user_id                 AS userId,
+            m.role,
+            m.content,
+            m.status,
+            m.created_at              AS createdAt
+        FROM qa_messages m
+        WHERE m.conversation_id = #{conversationId}
+        ORDER BY m.created_at ASC, m.id ASC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countMessages" resultType="long">
+        SELECT COUNT(*) FROM qa_messages WHERE conversation_id = #{conversationId}
+    </select>
+
+    <delete id="deleteMessage">
+        DELETE FROM qa_messages WHERE id = #{id}
+    </delete>
+
+    <!-- ===== 用户记忆 ===== -->
+
+    <select id="listMemories" resultType="com.tongji.admin.dto.AdminMemoryItem">
+        SELECT
+            CAST(mem.id AS CHAR) AS id,
+            mem.user_id          AS userId,
+            u.nickname           AS userNickname,
+            mem.category,
+            mem.content,
+            mem.source,
+            mem.enabled,
+            mem.created_at       AS createdAt,
+            mem.updated_at       AS updatedAt
+        FROM user_memories mem
+        LEFT JOIN users u ON mem.user_id = u.id
+        <where>
+            <if test="userId != null">
+                AND mem.user_id = #{userId}
+            </if>
+            <if test="source != null and source != ''">
+                AND mem.source = #{source}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND mem.content LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+        ORDER BY mem.updated_at DESC, mem.id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countMemories" resultType="long">
+        SELECT COUNT(*)
+        FROM user_memories mem
+        <where>
+            <if test="userId != null">
+                AND mem.user_id = #{userId}
+            </if>
+            <if test="source != null and source != ''">
+                AND mem.source = #{source}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND mem.content LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+        </where>
+    </select>
+
+    <update id="updateMemoryEnabled">
+        UPDATE user_memories
+        SET enabled = #{enabled}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteMemory">
+        DELETE FROM user_memories WHERE id = #{id}
+    </delete>
+
+    <!-- ===== 仪表盘统计 ===== -->
+
+    <select id="countConversationsAll" resultType="long">
+        SELECT COUNT(*) FROM qa_conversations WHERE deleted = 0
+    </select>
+
+    <select id="countMessagesAll" resultType="long">
+        SELECT COUNT(*) FROM qa_messages
+    </select>
+
+    <select id="countMemoriesAll" resultType="long">
+        SELECT COUNT(*) FROM user_memories
+    </select>
+
+</mapper>

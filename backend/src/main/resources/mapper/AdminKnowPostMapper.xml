@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tongji.admin.mapper.AdminKnowPostMapper">
+
+    <select id="findCreatorIdById" resultType="java.lang.Long">
+        SELECT creator_id FROM know_posts WHERE id = #{id}
+    </select>
+
+    <select id="listPage" resultType="com.tongji.admin.dto.AdminKnowPostItem">
+        SELECT
+            CAST(p.id AS CHAR)  AS id,
+            p.title,
+            p.description,
+            p.creator_id        AS creatorId,
+            u.nickname          AS creatorNickname,
+            p.status,
+            p.visible,
+            p.is_top            AS isTop,
+            p.type,
+            p.tags,
+            p.create_time       AS createTime,
+            p.publish_time      AS publishTime
+        FROM know_posts p
+        LEFT JOIN users u ON p.creator_id = u.id
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND p.title LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND p.status = #{status}
+            </if>
+            <if test="visible != null and visible != ''">
+                AND p.visible = #{visible}
+            </if>
+            <if test="creatorId != null">
+                AND p.creator_id = #{creatorId}
+            </if>
+        </where>
+        ORDER BY p.create_time DESC, p.id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countPage" resultType="long">
+        SELECT COUNT(*)
+        FROM know_posts p
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND p.title LIKE CONCAT('%', #{keyword}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND p.status = #{status}
+            </if>
+            <if test="visible != null and visible != ''">
+                AND p.visible = #{visible}
+            </if>
+            <if test="creatorId != null">
+                AND p.creator_id = #{creatorId}
+            </if>
+        </where>
+    </select>
+
+    <update id="updateVisibility">
+        UPDATE know_posts
+        SET visible = #{visible}, update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateTop">
+        UPDATE know_posts
+        SET is_top = #{isTop}, update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="softDelete">
+        UPDATE know_posts
+        SET status = 'deleted', update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM know_posts
+    </select>
+
+    <select id="countPublished" resultType="long">
+        SELECT COUNT(*) FROM know_posts WHERE status = 'published'
+    </select>
+
+</mapper>
