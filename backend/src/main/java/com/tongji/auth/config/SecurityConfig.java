@@ -75,6 +75,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/leaderboards/top").permitAll()
                         // 公开注册策略查询：注册页首屏需匿名读取当前注册模式
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auth/registration-config").permitAll()
+                        // WebSocket 端点：浏览器 WS 无法设 Authorization 头，鉴权由 JwtHandshakeInterceptor 处理
+                        .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(
                                 "/api/auth/send-code",
                                 "/api/auth/register",

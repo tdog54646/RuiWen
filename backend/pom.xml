@@ -83,6 +83,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- WebSocket（实时语音转文字中继：浏览器 ↔ 后端 ↔ DashScope） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <!-- OpenAI -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

@@ -223,6 +223,15 @@ qa:
     default-top-k: 5         # 默认 RAG 检索 Chunk 数量上限
     default-max-tokens: 1024 # 默认 LLM 最大生成 token 数
 
+# ---------------------------------------------------------------------------
+# 语音转文字（ASR）配置 —— 对应 AsrProperties
+# 实时流式：DashScope paraformer-realtime-v2 WebSocket（独立于 OPENAI_*）
+# ---------------------------------------------------------------------------
+asr:
+  api-key: ${DASHSCOPE_ASR_API_KEY:}
+  ws-url: ${ASR_WS_URL:wss://dashscope.aliyuncs.com/api-ws/v1/inference/}
+  model: ${ASR_MODEL:paraformer-realtime-v2}
+
 # ── 知文导出 PDF ──────────────────────────────────────────────────────
 # 中文字体查找路径：按顺序取第一个存在的文件注册为 font-family。
 # 容器（Alpine font-noto-cjk）与本地开发（macOS）路径均已内置默认值，通常无需修改。
