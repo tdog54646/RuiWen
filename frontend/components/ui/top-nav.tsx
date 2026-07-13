@@ -200,6 +200,16 @@ export function TopNav() {
 
         {/* 右侧：头像 + 登出 */}
         <div className="relative z-30 ml-auto flex shrink-0 items-center gap-0.5 pl-1">
+          {user && (user.role === "ADMIN" || user.role === "SUPER_ADMIN") && (
+            <Link
+              href="/admin"
+              title="后台管理"
+              aria-label="后台管理"
+              className="flex h-9 items-center rounded-full px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-white/60 hover:text-slate-900"
+            >
+              后台
+            </Link>
+          )}
           <Link
             href={
               isLoading
