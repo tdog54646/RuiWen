@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tongji.systemconfig.SystemConfigMapper">
+
+    <resultMap id="SystemConfigResultMap" type="com.tongji.systemconfig.SystemConfig">
+        <id column="config_key" property="configKey"/>
+        <result column="config_value" property="configValue"/>
+        <result column="description" property="description"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="findByKey" resultMap="SystemConfigResultMap">
+        SELECT *
+        FROM system_config
+        WHERE config_key = #{key}
+    </select>
+
+    <select id="findValueByKey" parameterType="string" resultType="string">
+        SELECT config_value
+        FROM system_config
+        WHERE config_key = #{key}
+    </select>
+
+    <insert id="upsert" parameterType="com.tongji.systemconfig.SystemConfig">
+        INSERT INTO system_config (config_key, config_value, description, updated_by)
+        VALUES (#{configKey}, #{configValue}, #{description}, #{updatedBy})
+        ON DUPLICATE KEY UPDATE
+            config_value = VALUES(config_value),
+            description  = VALUES(description),
+            updated_by   = VALUES(updated_by)
+    </insert>
+
+    <update id="updateValue">
+        UPDATE system_config
+        SET config_value = #{value},
+            updated_by   = #{updatedBy}
+        WHERE config_key = #{key}
+    </update>
+
+</mapper>
