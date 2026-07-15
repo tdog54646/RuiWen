@@ -36,8 +36,11 @@ public class DashScopeAsrClient {
     private java.net.http.WebSocket ds;
 
     // 仅在 DashScope 回调线程中访问（JDK 保证 listener 方法串行调用）
-    private String committed = "";
     private final StringBuilder fragmentBuf = new StringBuilder();
+    // 跨句累积状态：committed=已结束句累计文本，lastText=当前句最近一次文本，lastSentenceId=上一句编号
+    private String committed = "";
+    private String lastText = "";
+    private int lastSentenceId = -1;
 
     public DashScopeAsrClient(AsrProperties props,
                                BiConsumer<String, Boolean> onResult,
@@ -202,12 +205,27 @@ public class DashScopeAsrClient {
         JsonNode sentence = root.path("payload").path("output").path("sentence");
         String text = sentence.path("text").asText("");
         boolean isEnd = sentence.path("is_sentence_end").asBoolean(false);
-        // 句子结束时并入累计文本；否则以 累计+当前句 输出
-        if (isEnd) {
-            committed = committed + text;
-            onResult.accept(committed, true);
-        } else {
-            onResult.accept(committed + text, false);
+        int sentenceId = sentence.path("sentence_id").asInt(-1);
+        log.info("ASR result: sid={}, isEnd={}, text=[{}]", sentenceId, isEnd, text);
+
+        // 句子边界：新 sentence_id 出现意味着前一句已结束。
+        // paraformer-realtime-v2 的 is_sentence_end 仅在静音超阈值时才为 true，
+        // 连续说话时常常不发；改用 sentence_id 变化兜底，把前一句最终文本固化进累计，
+        // 否则后一句的 text 会覆盖前一句（用户看到的现象）。
+        if (lastSentenceId != -1 && sentenceId != lastSentenceId) {
+            committed += lastText;
         }
+
+        // 始终下发「累计文本」= 已结束句 + 当前句 partial，前端纯显示、无需再累积
+        onResult.accept(committed + text, isEnd);
+
+        // 句末把本句最终结果固化；否则记录当前句最近文本，供下一次边界检测使用
+        if (isEnd) {
+            committed += text;
+            lastText = "";
+        } else {
+            lastText = text;
+        }
+        lastSentenceId = sentenceId;
     }
 }

@@ -19,6 +19,13 @@ interface UseVoiceInputReturn {
   stop: () => void
 }
 
+/** 后端回推的增量结果：text 为当前句原始文本，isEnd 标记句末。 */
+interface AsrResult {
+  text: string
+  isEnd?: boolean
+  error?: string
+}
+
 /** 目标采样率：DashScope paraformer-realtime-v2 要求 16kHz PCM16。 */
 const TARGET_SAMPLE_RATE = 16000
 const ASR_PATH = "/ws/asr"
@@ -181,7 +188,7 @@ export function useVoiceInput({
 
     ws.onmessage = (ev) => {
       if (typeof ev.data !== "string") return
-      let msg: { text?: string; error?: string }
+      let msg: AsrResult
       try {
         msg = JSON.parse(ev.data)
       } catch {
@@ -190,6 +197,7 @@ export function useVoiceInput({
       if (msg.error) {
         onErrorRef.current?.(msg.error)
       } else if (typeof msg.text === "string") {
+        // 后端已做跨句累积，下发的是「累计文本」，前端直接显示
         onTextRef.current?.(msg.text)
       }
     }
