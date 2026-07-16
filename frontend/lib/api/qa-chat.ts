@@ -16,6 +16,7 @@ export type StreamChatParams = {
   conversationId?: string
   topK?: number
   maxTokens?: number
+  scope?: "all" | "private"
   signal?: AbortSignal
   onEvent: (event: QaStreamEvent) => void
 }
@@ -59,13 +60,14 @@ export const qaChatService = {
     conversationId,
     topK,
     maxTokens,
+    scope,
     signal,
     onEvent,
   }: StreamChatParams) => {
     const response = await apiFetchResponse(`${QA_PREFIX}/chat`, {
       method: "POST",
       headers: { Accept: "text/event-stream" },
-      body: { question, conversationId, topK, maxTokens },
+      body: { question, conversationId, topK, maxTokens, scope: scope ?? "all" },
       signal,
     })
 

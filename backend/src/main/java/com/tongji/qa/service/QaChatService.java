@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tongji.auth.exception.BusinessException;
 import com.tongji.auth.exception.ErrorCode;
 import com.tongji.knowpost.id.SnowflakeIdGenerator;
+import com.tongji.llm.rag.RetrievalContext;
 import com.tongji.llm.rag.model.RetrievalChunk;
 import com.tongji.llm.rag.search.HybridSearchService;
 import com.tongji.qa.api.dto.ConversationResponse;
@@ -119,10 +120,11 @@ public class QaChatService {
         // 4) 用户记忆
         List<UserMemory> memories = safeList(memoryMapper.listEnabledByUser(userId));
 
-        // 5) RAG 检索（全局；失败则降级为无上下文继续对话）
+        // 5) RAG 检索（按用户隔离过滤；失败则降级为无上下文继续对话）
+        RetrievalContext ctx = RetrievalContext.of(userId, RetrievalContext.parseScope(req.scope()));
         List<RetrievalChunk> chunks;
         try {
-            chunks = hybridSearchService.hybridSearch(question, topK);
+            chunks = hybridSearchService.hybridSearch(question, topK, ctx);
         } catch (Exception e) {
             log.warn("RAG retrieval failed, fallback to no context: {}", e.getMessage());
             chunks = List.of();

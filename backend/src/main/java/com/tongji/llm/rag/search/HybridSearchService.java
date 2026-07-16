@@ -1,8 +1,11 @@
 package com.tongji.llm.rag.search;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import com.tongji.llm.rag.RetrievalContext;
 import com.tongji.llm.rag.embedding.EmbeddingService;
 import com.tongji.llm.rag.model.RagProperties;
 import com.tongji.llm.rag.model.RetrievalChunk;
@@ -78,6 +81,12 @@ public class HybridSearchService {
      */
     private static final String META_FIELD = "metadata";
 
+    /** metadata.visible 字段路径（用户隔离过滤用）。 */
+    private static final String META_VISIBLE = META_FIELD + ".visible";
+
+    /** metadata.creatorId 字段路径（用户隔离过滤用）。 */
+    private static final String META_CREATOR = META_FIELD + ".creatorId";
+
     // -------------------------------------------------------------------------
     // 公开方法
     // -------------------------------------------------------------------------
@@ -96,15 +105,18 @@ public class HybridSearchService {
      *
      * @param query 用户提问文本
      * @param topK  最终返回的 Chunk 数量上限
+     * @param ctx   检索隔离上下文（用户 + scope），用于在两路检索层过滤
      * @return 按综合相关性降序排列的 Chunk 列表；若两路均无召回则返回空列表
      */
-    public List<RetrievalChunk> hybridSearch(String query, int topK) {
+    public List<RetrievalChunk> hybridSearch(String query, int topK, RetrievalContext ctx) {
         if (!StringUtils.hasText(query)) {
             log.warn("Hybrid search called with empty query");
             return List.of();
         }
 
         int retrievalTopK = properties.getRetrieval().getTopK();
+        // 用户隔离 filter：两路检索共用，在召回阶段即过滤，RRF/rerank 只对已过滤结果排序
+        Query isolationFilter = buildIsolationFilter(ctx);
 
         // Step 1: 生成查询向量
         float[] queryVector = embeddingService.embedQuery(query);
@@ -118,9 +130,9 @@ public class HybridSearchService {
         List<RetrievalChunk> bm25Results;
         try {
             var vectorFuture = java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> vectorSearch(queryVector, query, retrievalTopK));
+                    () -> vectorSearch(queryVector, query, retrievalTopK, isolationFilter));
             var bm25Future = java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> bm25Search(query, retrievalTopK));
+                    () -> bm25Search(query, retrievalTopK, isolationFilter));
 
             // join 等待两路都完成
             java.util.concurrent.CompletableFuture.allOf(vectorFuture, bm25Future).join();
@@ -129,8 +141,8 @@ public class HybridSearchService {
             bm25Results = bm25Future.getNow(List.of());
         } catch (Exception e) {
             log.error("Parallel retrieval failed, falling back to sequential: {}", e.getMessage());
-            vectorResults = vectorSearch(queryVector, query, retrievalTopK);
-            bm25Results = bm25Search(query, retrievalTopK);
+            vectorResults = vectorSearch(queryVector, query, retrievalTopK, isolationFilter);
+            bm25Results = bm25Search(query, retrievalTopK, isolationFilter);
         }
 
         log.debug("Retrieval stats - vector: {}, bm25: {}", vectorResults.size(), bm25Results.size());
@@ -164,7 +176,7 @@ public class HybridSearchService {
     public List<RetrievalChunk> vectorOnlySearch(String query, int topK) {
         float[] vec = embeddingService.embedQuery(query);
         if (vec == null || vec.length == 0) return List.of();
-        return vectorSearch(vec, query, topK);
+        return vectorSearch(vec, query, topK, Query.of(q -> q.matchAll(m -> m)));
     }
 
     /**
@@ -175,7 +187,7 @@ public class HybridSearchService {
      * @return 按 BM25 得分降序的 Chunk 列表
      */
     public List<RetrievalChunk> bm25OnlySearch(String query, int topK) {
-        return bm25Search(query, topK);
+        return bm25Search(query, topK, Query.of(q -> q.matchAll(m -> m)));
     }
 
     // -------------------------------------------------------------------------
@@ -196,7 +208,7 @@ public class HybridSearchService {
      * @param topK        召回数量
      * @return 按余弦相似度降序的 Chunk 列表
      */
-    private List<RetrievalChunk> vectorSearch(float[] queryVector, String queryText, int topK) {
+    private List<RetrievalChunk> vectorSearch(float[] queryVector, String queryText, int topK, Query filter) {
         try {
             // 使用 lambda 形式构造 KNN 查询，与 Spring AI ElasticsearchVectorStore 保持一致
             // queryVector 需要 List<Float>（而非 double[]）
@@ -209,7 +221,8 @@ public class HybridSearchService {
                                     .field(VECTOR_FIELD)
                                     .queryVector(queryVectorList)
                                     .k(topK)
-                                    .numCandidates(Math.max(topK * 2, 50)))
+                                    .numCandidates(Math.max(topK * 2, 50))
+                                    .filter(filter))  // KNN 原生 pre-filter：召回阶段即做用户隔离
                             .query(q -> q.matchAll(m -> m)),  // 空 query，由 knn 主导
                     getMapTypeRef());
 
@@ -237,7 +250,7 @@ public class HybridSearchService {
      * @param topK  召回数量
      * @return 按 BM25 得分降序的 Chunk 列表
      */
-    private List<RetrievalChunk> bm25Search(String query, int topK) {
+    private List<RetrievalChunk> bm25Search(String query, int topK, Query filter) {
         try {
             SearchResponse<Map<String, Object>> response = es.search(s -> s
                             .index(INDEX_NAME)
@@ -257,6 +270,7 @@ public class HybridSearchService {
                                                     .boost(2.0f)   // 短语匹配加权
                                             ))
                                             .minimumShouldMatch("1") // 至少满足一个 should 条件
+                                            .filter(filter)  // 用户隔离：限制可见域
                                     )),
                     getMapTypeRef());
 
@@ -265,6 +279,38 @@ public class HybridSearchService {
             log.error("BM25 search failed: {}", e.getMessage(), e);
             return List.of();
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // 用户隔离 filter 构造
+    // -------------------------------------------------------------------------
+
+    /**
+     * 按 {@link RetrievalContext} 构造用户隔离 filter，KNN pre-filter 与 BM25 bool.filter 共用。
+     * <ul>
+     *   <li>{@code PRIVATE}：{@code creatorId==me AND visible!=public}</li>
+     *   <li>{@code ALL}：{@code visible==public} OR（{@code creatorId==me AND visible!=public}）
+     *       OR（缺 visible 字段的旧文档，过渡放行）</li>
+     * </ul>
+     * 过渡放行仅 ALL 生效；新写入数据均带 visible，该条件随增量重建自然失效。
+     */
+    private Query buildIsolationFilter(RetrievalContext ctx) {
+        Query termPublic = Query.of(q -> q.term(t -> t.field(META_VISIBLE).value(FieldValue.of("public"))));
+        Query notPublic = Query.of(q -> q.bool(b -> b.mustNot(termPublic)));
+        Query termMine = Query.of(q -> q.term(t -> t.field(META_CREATOR).value(FieldValue.of(String.valueOf(ctx.userId())))));
+        Query mineNonPublic = Query.of(q -> q.bool(b -> b.filter(termMine).filter(notPublic)));
+
+        if (ctx.scope() == RetrievalContext.Scope.PRIVATE) {
+            return mineNonPublic;
+        }
+        // ALL：公共 OR 我的非公开 OR 旧数据（缺 visible 字段，过渡放行）
+        Query existsVisible = Query.of(e -> e.exists(ex -> ex.field(META_VISIBLE)));
+        Query visibleMissing = Query.of(q -> q.bool(b -> b.mustNot(existsVisible)));
+        return Query.of(q -> q.bool(b -> b
+                .should(termPublic)
+                .should(mineNonPublic)
+                .should(visibleMissing)
+                .minimumShouldMatch("1")));
     }
 
     // -------------------------------------------------------------------------

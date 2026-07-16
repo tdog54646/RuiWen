@@ -104,7 +104,8 @@
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
             p.publish_time AS publishTime,
-            p.is_top AS isTop
+            p.is_top AS isTop,
+            p.visible
         FROM know_posts p
         JOIN users u ON p.creator_id = u.id
         WHERE p.status = 'published' AND p.visible = 'public'
@@ -124,7 +125,8 @@
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
             p.publish_time AS publishTime,
-            p.is_top AS isTop
+            p.is_top AS isTop,
+            p.visible
         FROM know_posts p
         JOIN users u ON p.creator_id = u.id
         WHERE p.creator_id = #{creatorId} AND p.status = 'published'

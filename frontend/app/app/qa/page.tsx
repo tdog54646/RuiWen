@@ -33,6 +33,7 @@ export default function QAPage() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [memOpen, setMemOpen] = useState(false)
+  const [scope, setScope] = useState<"all" | "private">("all")
 
   const abortRef = useRef<AbortController | null>(null)
   const streamBuf = useRef("")
@@ -157,6 +158,7 @@ export default function QAPage() {
         await qaChatService.streamChat({
           question,
           conversationId: activeIdRef.current ?? undefined,
+          scope,
           signal: controller.signal,
           onEvent: (evt) => {
             if (evt.type === "meta") {
@@ -190,7 +192,7 @@ export default function QAPage() {
         }
       }
     },
-    [user, finalizeAssistant, refreshConversations],
+    [user, scope, finalizeAssistant, refreshConversations],
   )
 
   const stop = useCallback(() => {
@@ -261,6 +263,17 @@ export default function QAPage() {
               </div>
             </div>
             <div className="flex items-center gap-1.5">
+              <Button
+                variant={scope === "private" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setScope((s) => (s === "private" ? "all" : "private"))}
+                className="gap-1"
+                title={scope === "private" ? "当前：仅我的私有库，点击切到全部知识" : "当前：全部知识，点击切到仅我的私有库"}
+              >
+                <Sparkles className="size-3.5" />
+                <span className="hidden sm:inline">{scope === "private" ? "仅私有库" : "全部知识"}</span>
+                <span className="sm:hidden">{scope === "private" ? "私有" : "全部"}</span>
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"

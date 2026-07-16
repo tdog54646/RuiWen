@@ -175,7 +175,7 @@ public class FeedCacheInvalidationListener {
                 it = new com.tongji.knowpost.api.dto.FeedItemResponse(
                         it.id(), it.title(), it.description(), it.coverImage(),
                         it.tags(), it.authorAvatar(), it.authorNickname(), it.tagJson(),
-                        like, fav, liked, faved, it.isTop());
+                        like, fav, liked, faved, it.isTop(), it.visible());
             }
             items.add(it);
         }

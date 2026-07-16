@@ -139,7 +139,8 @@ public class SearchServiceImpl implements SearchService {
                     favoriteCount,
                     liked,
                     faved,
-                    null
+                    null,
+                    "public"
             ));
         }
 

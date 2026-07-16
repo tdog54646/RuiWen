@@ -132,6 +132,7 @@ export function UserProfilePanel({
                 summary={item.description ?? ""}
                 tags={item.tags ?? []}
                 isTop={item.isTop}
+                visible={item.visible}
                 authorTags={parseTags(item.tagJson)}
                 teacher={{
                   name: item.authorNickname,

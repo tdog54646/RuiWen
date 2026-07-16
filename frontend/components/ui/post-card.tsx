@@ -7,6 +7,7 @@ import { MoreHorizontal, Pin, Globe, Lock, Trash2, Pencil } from "lucide-react"
 import { motion } from "framer-motion"
 import { useAuth } from "@/components/auth/auth-context"
 import { knowpostService } from "@/lib/api/knowpost"
+import { toast } from "sonner"
 import type { VisibleScope } from "@/lib/types/knowpost"
 import { UserAvatar } from "./user-avatar"
 
@@ -56,6 +57,7 @@ export type PostCardProps = {
   tags: string[]
   authorTags?: string[]
   isTop?: boolean
+  visible?: VisibleScope
   teacher: {
     name: string
     avatarUrl?: string
@@ -78,6 +80,7 @@ export function PostCard({
   tags,
   authorTags,
   isTop,
+  visible,
   teacher,
   coverImage,
   to,
@@ -120,15 +123,18 @@ export function PostCard({
     }
   }
 
-  const handleSetVisibility = async (visible: VisibleScope) => {
+  const handleSetVisibility = async (next: VisibleScope) => {
     if (!tokens?.accessToken) return
     setMenuLoading(true)
     try {
-      await knowpostService.setVisibility(id, visible, tokens.accessToken)
+      await knowpostService.setVisibility(id, next, tokens.accessToken)
       setMenuOpen(false)
-      onChanged?.("visibility", { visible })
+      onChanged?.("visibility", { visible: next })
+      toast.success(`已设为${next === "public" ? "公开" : "私密"}`)
     } catch (e) {
-      setMenuError(e instanceof Error ? e.message : "操作失败")
+      const msg = e instanceof Error ? e.message : "操作失败"
+      setMenuError(msg)
+      toast.error(msg)
     } finally {
       setMenuLoading(false)
     }
@@ -197,6 +203,18 @@ export function PostCard({
             </span>
           )}
         </div>
+        {visible && (
+          <span
+            className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+              visible === "public"
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-slate-200 text-slate-600"
+            }`}
+          >
+            {visible === "public" ? <Globe className="size-3" /> : <Lock className="size-3" />}
+            {visible === "public" ? "公开" : "私密"}
+          </span>
+        )}
       </div>
       {footerExtra && <div className="pt-1">{footerExtra}</div>}
     </>

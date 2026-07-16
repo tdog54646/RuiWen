@@ -18,5 +18,6 @@ public record FeedItemResponse(
         Long favoriteCount,
         Boolean liked,
         Boolean faved,
-        Boolean isTop
+        Boolean isTop,
+        String visible
 ) {}

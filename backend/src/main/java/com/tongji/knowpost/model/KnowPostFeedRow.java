@@ -19,4 +19,5 @@ public class KnowPostFeedRow {
     private String authorTagJson; // 作者的领域标签 JSON
     private Instant publishTime;
     private Boolean isTop;
+    private String visible;
 }

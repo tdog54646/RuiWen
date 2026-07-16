@@ -198,7 +198,7 @@ public class KnowPostFeedServiceImpl implements KnowPostFeedService {
             boolean liked = uid != null && counterService.isLiked("knowpost", it.id(), uid);
             boolean faved = uid != null && counterService.isFaved("knowpost", it.id(), uid);
             out.add(new FeedItemResponse(
-                    it.id(), it.title(), it.description(), it.coverImage(), it.tags(), it.authorAvatar(), it.authorNickname(), it.tagJson(), it.likeCount(), it.favoriteCount(), liked, faved, it.isTop()
+                    it.id(), it.title(), it.description(), it.coverImage(), it.tags(), it.authorAvatar(), it.authorNickname(), it.tagJson(), it.likeCount(), it.favoriteCount(), liked, faved, it.isTop(), it.visible()
             ));
         }
         return out;
@@ -273,7 +273,7 @@ public class KnowPostFeedServiceImpl implements KnowPostFeedService {
                 List<String> imgs = parseStringArray(d.getImgUrls());
                 // 知文封面
                 String cover = imgs.isEmpty() ? null : imgs.getFirst();
-                FeedItemResponse it = new FeedItemResponse(String.valueOf(d.getId()), d.getTitle(), d.getDescription(), cover, tags, d.getAuthorAvatar(), d.getAuthorNickname(), d.getAuthorTagJson(), null, null, null, null, null);
+                FeedItemResponse it = new FeedItemResponse(String.valueOf(d.getId()), d.getTitle(), d.getDescription(), cover, tags, d.getAuthorAvatar(), d.getAuthorNickname(), d.getAuthorTagJson(), null, null, null, null, null, d.getVisible());
                 String k = "feed:item:" + mid;
                 try {
                     String j = objectMapper.writeValueAsString(it);
@@ -335,7 +335,7 @@ public class KnowPostFeedServiceImpl implements KnowPostFeedService {
             // 用户维度状态实时计算，不落入片段缓存以避免用户数据污染
             boolean liked = uid != null && counterService.isLiked("knowpost", base.id(), uid);
             boolean faved = uid != null && counterService.isFaved("knowpost", base.id(), uid);
-            enriched.add(new FeedItemResponse(base.id(), base.title(), base.description(), base.coverImage(), base.tags(), base.authorAvatar(), base.authorNickname(), base.tagJson(), likeCount, favoriteCount, liked, faved, base.isTop()));
+            enriched.add(new FeedItemResponse(base.id(), base.title(), base.description(), base.coverImage(), base.tags(), base.authorAvatar(), base.authorNickname(), base.tagJson(), likeCount, favoriteCount, liked, faved, base.isTop(), base.visible()));
         }
         // hasMore 优先使用软缓存值；若缺失，则以“满页”作为兜底判断
         boolean hasMore = hasMoreStr != null ? "1".equals(hasMoreStr) : (idList.size() == size);
@@ -581,7 +581,8 @@ public class KnowPostFeedServiceImpl implements KnowPostFeedService {
                     favoriteCount,
                     liked,
                     faved,
-                    isTop
+                    isTop,
+                    r.getVisible()
             ));
         }
         return items;

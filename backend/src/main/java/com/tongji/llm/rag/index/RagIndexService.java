@@ -27,7 +27,7 @@ import java.util.*;
 
 /**
  * RAG 索引构建服务：
- * - 将公开且已发布的知文切片并写入向量库
+ * - 将已发布知文切片并写入向量库（公开内容进公共检索，非公开内容进个人私有库，检索时按 visible/creatorId 过滤）
  * - 通过指纹（SHA256/ETag）判断是否需要重建，保证幂等
  * - 采用 delete-by-query 清理旧切片，再批量 upsert 新切片
  * - 使用 {@link SemanticChunker} 实现语义分块（相比旧版固定长度截断，
@@ -76,9 +76,9 @@ public class RagIndexService {
             return 0;
         }
 
-        // 仅索引公开的已发布知文
-        if (!"published".equalsIgnoreCase(row.getStatus()) || !"public".equalsIgnoreCase(row.getVisible())) {
-            log.warn("Post {} is not public/published, skip indexing", postId);
+        // 仅索引已发布知文；不再限制 visible——非公开内容进入个人私有库，检索时按 creatorId 过滤
+        if (!"published".equalsIgnoreCase(row.getStatus())) {
+            log.warn("Post {} is not published, skip indexing", postId);
             return 0;
         }
 
@@ -131,6 +131,9 @@ public class RagIndexService {
             // 新增字段：与 es-mapping-rag-chunk.json 中的字段保持一致
             meta.put("createdAt", nowMs);
             meta.put("updatedAt", nowMs);
+            // 用户隔离：检索时按 visible/creatorId 过滤
+            meta.put("visible", row.getVisible());
+            meta.put("creatorId", String.valueOf(row.getCreatorId()));
             docs.add(new Document(chunks.get(i), meta));
         }
         try {
