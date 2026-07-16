@@ -66,12 +66,6 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/detail/*").permitAll()
                         // 知文导出 PDF（可见性由服务层校验，匿名可导出公开知文）
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/export/pdf").permitAll()
-                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/rag/*").permitAll()
-                        // 知文详情页 RAG 问答（SSE 流式输出）允许匿名访问
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/qa/stream").permitAll()
-                        //.requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/qa/stream").permitAll()
-                        // 知文详情页热点问答允许匿名访问
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/knowposts/*/qa/hotquestion").permitAll()
                         .requestMatchers("/api/leaderboards/top").permitAll()
                         // 公开注册策略查询：注册页首屏需匿名读取当前注册模式
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auth/registration-config").permitAll()

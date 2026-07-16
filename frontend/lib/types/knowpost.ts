@@ -87,11 +87,6 @@ export type KnowpostDetailResponse = {
   publishTime?: string | number
 }
 
-export type KnowpostHotQuestionResponse = {
-  postId: string
-  question: string | null
-}
-
 export type LikeActionResponse = {
   changed: boolean
   liked: boolean

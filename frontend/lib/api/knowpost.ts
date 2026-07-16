@@ -11,7 +11,6 @@ import type {
   LikeActionResponse,
   FavActionResponse,
   CounterResponse,
-  KnowpostHotQuestionResponse,
   VisibleScope,
 } from "@/lib/types/knowpost"
 
@@ -120,11 +119,6 @@ export const knowpostService = {
     a.remove()
     URL.revokeObjectURL(objectUrl)
   },
-
-  hotQuestion: (id: string, limit = 10) =>
-    apiFetch<KnowpostHotQuestionResponse>(
-      `${KNOWPOST_PREFIX}/${id}/qa/hotquestion?limit=${limit}`,
-    ),
 
   suggestDescription: (content: string, accessToken: string) =>
     apiFetch<{ description: string }>(

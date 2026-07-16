@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
@@ -19,24 +19,15 @@ import {
 } from "@/components/ui/studio"
 import { useAuth } from "@/components/auth/auth-context"
 import { knowpostService, withCacheBuster } from "@/lib/api/knowpost"
-import { qaService } from "@/lib/api/qa"
 import type { KnowpostDetailResponse } from "@/lib/types/knowpost"
 import {
   X,
   ChevronLeft,
   ChevronRight,
-  Bot,
-  Send,
   Loader2,
-  Sparkles,
-  Flame,
   FileDown,
 } from "lucide-react"
 import { toast } from "sonner"
-
-function isAbortError(error: unknown) {
-  return error instanceof Error && error.name === "AbortError"
-}
 
 export default function PostDetailPage() {
   const params = useParams<{ id: string }>()
@@ -48,13 +39,6 @@ export default function PostDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState(0)
-
-  const [ragQuestion, setRagQuestion] = useState("")
-  const [ragAnswer, setRagAnswer] = useState("")
-  const [ragLoading, setRagLoading] = useState(false)
-  const [ragError, setRagError] = useState<string | null>(null)
-  const [hotQuestion, setHotQuestion] = useState<string | null>(null)
-  const ragControllerRef = useRef<AbortController | null>(null)
 
   const [exporting, setExporting] = useState(false)
 
@@ -89,82 +73,6 @@ export default function PostDetailPage() {
     }
   }, [id, tokens?.accessToken])
 
-  useEffect(() => {
-    let cancelled = false
-    if (!id) {
-      setHotQuestion(null)
-      return
-    }
-    knowpostService
-      .hotQuestion(id)
-      .then((resp) => {
-        if (cancelled) return
-        const question = resp.question?.trim() ?? ""
-        setHotQuestion(question || null)
-      })
-      .catch(() => {
-        if (!cancelled) setHotQuestion(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [id])
-
-  const streamRag = async (q: string, controller: AbortController) => {
-    try {
-      await qaService.streamKnowpost(id, {
-        question: q,
-        topK: 5,
-        maxTokens: 1024,
-        accessToken: tokens?.accessToken ?? null,
-        signal: controller.signal,
-        onMessage: (message) => {
-          setRagAnswer((prev) => prev + message)
-        },
-      })
-    } catch (err) {
-      if (!isAbortError(err)) {
-        setRagError(err instanceof Error ? err.message : "请求失败")
-      }
-    } finally {
-      if (ragControllerRef.current === controller) {
-        ragControllerRef.current = null
-        setRagLoading(false)
-      }
-    }
-  }
-
-  const startRag = (presetQuestion?: string) => {
-    if (!id) return
-    const questionSource =
-      typeof presetQuestion === "string" ? presetQuestion : ragQuestion
-    const q = questionSource.trim()
-    if (!q) return
-    if (!tokens?.accessToken) {
-      setRagError("请先登录后提问")
-      return
-    }
-    if (detail && detail.visible !== "public") {
-      setRagError("仅公开知文支持问答")
-      return
-    }
-    setRagError(null)
-    setRagAnswer("")
-    setRagQuestion(q)
-
-    ragControllerRef.current?.abort()
-    const controller = new AbortController()
-    ragControllerRef.current = controller
-    setRagLoading(true)
-    void streamRag(q, controller)
-  }
-
-  const stopRag = () => {
-    ragControllerRef.current?.abort()
-    ragControllerRef.current = null
-    setRagLoading(false)
-  }
-
   const handleExportPdf = async () => {
     if (!id || !detail) return
     setExporting(true)
@@ -177,12 +85,6 @@ export default function PostDetailPage() {
       setExporting(false)
     }
   }
-
-  useEffect(() => {
-    return () => {
-      ragControllerRef.current?.abort()
-    }
-  }, [])
 
   const isSelf = detail?.authorId && user?.id === detail.authorId
 
@@ -334,84 +236,6 @@ export default function PostDetailPage() {
             {contentError}
           </MessageBanner>
         </div>
-      </GlassCard>
-
-      {/* AI 智能问答 */}
-      <GlassCard delay={0.2} disableHover contentClassName="flex flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600">
-            <Bot className="size-4" />
-          </div>
-          <SectionLabel>AI 智能问答</SectionLabel>
-        </div>
-
-        {hotQuestion && (
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-xl border border-white/60 bg-white/40 px-3 py-2.5 text-left backdrop-blur-md transition-colors hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => startRag(hotQuestion)}
-            disabled={ragLoading}
-          >
-            <Flame className="size-4 shrink-0 text-orange-500" />
-            <span className="flex flex-col">
-              <span className="text-[11px] text-slate-400">大家都在问</span>
-              <span className="text-sm font-medium text-slate-700">
-                {hotQuestion}
-              </span>
-            </span>
-          </button>
-        )}
-
-        <textarea
-          className="min-h-[70px] w-full resize-y rounded-xl border border-white/60 bg-white/50 p-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white/70"
-          placeholder="围绕本知文提问…"
-          value={ragQuestion}
-          onChange={(e) => setRagQuestion(e.target.value)}
-        />
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            onClick={() => startRag()}
-            disabled={ragLoading || !ragQuestion.trim()}
-            className="gap-1.5 bg-gradient-to-r from-cyan-500 to-violet-600 text-white"
-          >
-            {ragLoading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Send className="size-3.5" />
-            )}
-            {ragLoading ? "生成中…" : "发送"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={stopRag}
-            disabled={!ragLoading}
-            className="border-white/60 bg-white/60 backdrop-blur-md"
-          >
-            停止
-          </Button>
-        </div>
-
-        <p className="flex items-center gap-1 text-[11px] text-slate-400">
-          <Sparkles className="size-3" />
-          仅&quot;公开&quot;知文支持问答，答案基于当前知文实时生成。
-        </p>
-
-        <MessageBanner tone="error" show={!!ragError}>
-          {ragError}
-        </MessageBanner>
-
-        {(ragAnswer || ragLoading) && (
-          <div className="flex-1 overflow-auto rounded-xl border border-white/60 bg-white/40 p-4 text-sm backdrop-blur-md">
-            {ragAnswer ? (
-              <MarkdownRenderer content={ragAnswer} className="prose-sm" />
-            ) : (
-              <span className="text-slate-400">等待生成…</span>
-            )}
-          </div>
-        )}
       </GlassCard>
 
       {/* 图片预览灯箱 */}
