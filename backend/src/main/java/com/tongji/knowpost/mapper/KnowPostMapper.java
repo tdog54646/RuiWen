@@ -46,4 +46,7 @@ public interface KnowPostMapper {
 
     // 列出我的已发布知文ID列表
     List<Long> listMyPublishedIds(@Param("creatorId") long creatorId);
+
+    // 列出所有已发布知文ID（含非公开），供后台全量索引重建遍历
+    List<Long> listAllPublishedIds();
 }

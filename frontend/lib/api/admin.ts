@@ -10,8 +10,10 @@ import type {
   AdminUserDetail,
   AdminUserListItem,
   DashboardStats,
+  IndexStats,
   LoginLog,
   PageResult,
+  RebuildStatus,
   SystemSettings,
 } from "@/lib/types/admin"
 
@@ -195,4 +197,29 @@ export const adminService = {
       method: "DELETE",
       accessToken,
     }),
+
+  // 索引库管理（RAG 向量索引）
+  getIndexStats: (accessToken: string) =>
+    apiFetch<IndexStats>(`${ADMIN_PREFIX}/index/rag/stats`, { accessToken }),
+
+  rebuildRagPost: (accessToken: string, id: string) =>
+    apiFetch<number>(`${ADMIN_PREFIX}/index/rag/posts/${id}/rebuild`, {
+      method: "POST",
+      accessToken,
+    }),
+
+  deleteRagPostIndex: (accessToken: string, id: string) =>
+    apiFetch<void>(`${ADMIN_PREFIX}/index/rag/posts/${id}`, {
+      method: "DELETE",
+      accessToken,
+    }),
+
+  rebuildAllRagIndex: (accessToken: string) =>
+    apiFetch<RebuildStatus>(`${ADMIN_PREFIX}/index/rag/rebuild-all`, {
+      method: "POST",
+      accessToken,
+    }),
+
+  getRebuildAllStatus: (accessToken: string) =>
+    apiFetch<RebuildStatus>(`${ADMIN_PREFIX}/index/rag/rebuild-all/status`, { accessToken }),
 }

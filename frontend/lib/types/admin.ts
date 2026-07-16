@@ -144,3 +144,21 @@ export type AdminMemoryQuery = {
   page?: number
   size?: number
 }
+
+/** RAG 向量索引统计。 */
+export type IndexStats = {
+  totalChunks: number
+  distinctPosts: number
+  byVisible: { visible: string; count: number }[]
+}
+
+/** 全量重建进度。 */
+export type RebuildStatus = {
+  running: boolean
+  total: number
+  done: number
+  failed: number
+  startedAt: number | null
+  finishedAt: number | null
+  message: string
+}

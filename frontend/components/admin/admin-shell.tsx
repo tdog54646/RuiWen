@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   MessagesSquare,
   Brain,
+  Database,
 } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
 import { cn } from "@/lib/utils"
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/admin/registration", label: "注册策略", icon: Shuffle },
   { href: "/admin/audit", label: "登录审计", icon: ScrollText },
   { href: "/admin/posts", label: "内容审核", icon: FileText },
+  { href: "/admin/index", label: "索引库", icon: Database },
   { href: "/admin/conversations", label: "会话审计", icon: MessagesSquare },
   { href: "/admin/memories", label: "用户记忆", icon: Brain },
   { href: "/admin/settings", label: "系统配置", icon: Settings },
