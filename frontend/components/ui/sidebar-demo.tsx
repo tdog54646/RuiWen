@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 
 import { useAuth } from "@/components/auth/auth-context"
+import { LineLogo } from "@/components/brand/line-logo"
 import { Sidebar } from "@/components/ui/sidebar"
 import { UserAvatar } from "@/components/ui/user-avatar"
 import { cn } from "@/lib/utils"
@@ -36,9 +37,7 @@ export function SidebarDemo() {
             )}
             onClick={closeMobile}
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-black text-[9px] font-black leading-none tracking-tight text-white">
-              LINE
-            </span>
+            <LineLogo variant="mark" className="size-9 shrink-0" priority />
             <span
               className={cn(
                 "text-sm font-semibold transition-opacity",

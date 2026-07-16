@@ -16,7 +16,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Line",
-  description: "Line — 知识分享平台",
+  description: "Line — Markdown 知识社区与私有 AI 知识库",
+  icons: {
+    icon: "/brand/line-icon-transparent.png",
+    shortcut: "/brand/line-icon-transparent.png",
+    apple: "/brand/line-icon-transparent.png",
+  },
 };
 
 export default function RootLayout({

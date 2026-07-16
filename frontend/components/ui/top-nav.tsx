@@ -15,6 +15,7 @@ import {
 } from "framer-motion"
 
 import { useAuth } from "@/components/auth/auth-context"
+import { LineLogo } from "@/components/brand/line-logo"
 import { UserAvatar } from "@/components/ui/user-avatar"
 import { cn } from "@/lib/utils"
 
@@ -164,9 +165,7 @@ export function TopNav() {
           aria-label="Line 首页"
           className="relative z-30 flex shrink-0 items-center gap-2 rounded-full px-2.5 py-1.5"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-black text-[8px] font-black leading-none tracking-tight text-white">
-            LINE
-          </span>
+          <LineLogo variant="mark" className="size-7 shrink-0" priority />
           <span className="hidden text-sm font-semibold text-slate-800 sm:inline">
             Line
           </span>

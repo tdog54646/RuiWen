@@ -17,6 +17,7 @@ import {
   Database,
 } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
+import { LineLogo } from "@/components/brand/line-logo"
 import { cn } from "@/lib/utils"
 
 const navItems = [
@@ -61,10 +62,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       {/* 侧边栏 */}
       <aside className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
         <div className="flex items-center gap-2 px-5 py-5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-[8px] font-black text-white">
-            LINE
-          </span>
-          <span className="text-sm font-semibold">后台管理</span>
+          <LineLogo variant="mark" className="size-8 shrink-0" priority />
+          <div className="leading-tight">
+            <p className="text-sm font-semibold">Line</p>
+            <p className="text-[11px] text-slate-400">后台管理</p>
+          </div>
         </div>
         <nav className="flex flex-1 flex-col gap-1 px-3 py-2">
           {navItems.map(({ href, label, icon: Icon }) => {

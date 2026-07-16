@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowLeft, Eye, EyeOff, Sparkles } from "lucide-react"
+import { ArrowLeft, Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
+import { LineLogo } from "@/components/brand/line-logo"
 import { ApiError } from "@/lib/api/client"
 import {
   AuthShell,
@@ -64,10 +65,8 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
     <AuthShell>
       {/* 品牌 */}
       <div className="mb-8 flex flex-col items-center text-center">
-        <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600">
-          <Sparkles className="size-6" />
-        </div>
-        <h1 className="text-gradient mt-4 text-2xl font-bold tracking-tight">
+        <LineLogo className="w-44" priority />
+        <h1 className="text-gradient mt-3 text-2xl font-bold tracking-tight">
           欢迎回来
         </h1>
         <p className="mt-1.5 text-sm text-slate-500">

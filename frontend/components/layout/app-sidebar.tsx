@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Search, PenSquare, User, Sparkles } from "lucide-react"
+import { Home, Search, PenSquare, User } from "lucide-react"
+import { LineLogo } from "@/components/brand/line-logo"
 import { cn } from "@/lib/utils"
 
 const navItems = [
@@ -24,9 +25,10 @@ export function AppSidebar({ className }: { className?: string }) {
     >
       <Link
         href="/app"
-        className="flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-md"
+        aria-label="Line 首页"
+        className="flex size-12 items-center justify-center"
       >
-        <Sparkles className="size-6" />
+        <LineLogo variant="mark" className="size-12" priority />
       </Link>
 
       <nav className="flex w-full flex-col gap-2">

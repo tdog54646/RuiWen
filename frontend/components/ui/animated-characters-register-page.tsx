@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Eye, EyeOff, Sparkles } from "lucide-react"
+import { Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
+import { LineLogo } from "@/components/brand/line-logo"
 import { authService } from "@/lib/api/auth"
 import { ApiError } from "@/lib/api/client"
 import {
@@ -160,8 +161,8 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
     return (
       <AuthShell>
         <div className="mb-8 flex flex-col items-center text-center">
-          <Sparkles className="size-6 text-violet-600" />
-          <h1 className="text-gradient mt-4 text-2xl font-bold tracking-tight">加入 Line</h1>
+          <LineLogo className="w-44" priority />
+          <h1 className="text-gradient mt-3 text-2xl font-bold tracking-tight">加入 Line</h1>
         </div>
         <MessageBanner tone="error" show>
           注册功能暂未开放，请联系管理员。
@@ -185,10 +186,8 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
   return (
     <AuthShell>
       <div className="mb-8 flex flex-col items-center text-center">
-        <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600">
-          <Sparkles className="size-6" />
-        </div>
-        <h1 className="text-gradient mt-4 text-2xl font-bold tracking-tight">加入 Line</h1>
+        <LineLogo className="w-44" priority />
+        <h1 className="text-gradient mt-3 text-2xl font-bold tracking-tight">加入 Line</h1>
         <p className="mt-1.5 text-sm text-slate-500">
           {isEmailMode ? "使用邮箱与密码完成注册" : "使用手机号与验证码完成注册"}
         </p>

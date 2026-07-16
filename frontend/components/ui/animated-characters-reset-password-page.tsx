@@ -5,7 +5,8 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Eye, EyeOff, Sparkles, KeyRound } from "lucide-react"
+import { Eye, EyeOff } from "lucide-react"
+import { LineLogo } from "@/components/brand/line-logo"
 import { authService } from "@/lib/api/auth"
 import { ApiError } from "@/lib/api/client"
 import {
@@ -102,10 +103,8 @@ function ResetPasswordPage({ onResetSuccess }: ResetPasswordPageProps) {
   return (
     <AuthShell>
       <div className="mb-8 flex flex-col items-center text-center">
-        <div className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600">
-          <KeyRound className="size-6" />
-        </div>
-        <h1 className="text-gradient mt-4 text-2xl font-bold tracking-tight">
+        <LineLogo className="w-44" priority />
+        <h1 className="text-gradient mt-3 text-2xl font-bold tracking-tight">
           重置密码
         </h1>
         <p className="mt-1.5 text-sm text-slate-500">
@@ -234,7 +233,7 @@ function ResetPasswordPage({ onResetSuccess }: ResetPasswordPageProps) {
       </div>
 
       <div className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
-        <Sparkles className="size-3" />
+        <LineLogo variant="mark" className="size-4" />
         Line · 知识分享平台
       </div>
     </AuthShell>
