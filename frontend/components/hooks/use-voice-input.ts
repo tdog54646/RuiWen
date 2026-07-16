@@ -271,14 +271,26 @@ function readAccessToken(): string | null {
   }
 }
 
-/** 推导 WS 基址：优先 NEXT_PUBLIC_API_BASE_URL（http→ws），否则同源 window.location。 */
+/**
+ * 推导 WS 基址：
+ * - 生产环境始终使用当前页面同源地址，由 Nginx 将 /ws/asr 转发到后端；
+ * - 本地开发时允许 NEXT_PUBLIC_API_BASE_URL 指向 localhost 后端。
+ *
+ * 发布镜像曾误将本地 .env 的 http://localhost:8080 编译进前端。如果生产环境继续
+ * 无条件信任该值，用户浏览器会连接自己的 localhost，服务器完全收不到握手请求。
+ */
 function wsBaseUrl(): string {
+  const currentProto =
+    typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:"
+  const currentHost = typeof window !== "undefined" ? window.location.host : ""
+  const currentHostname = typeof window !== "undefined" ? window.location.hostname : ""
+  const isLocalPage = currentHostname === "localhost" || currentHostname === "127.0.0.1"
+
   const envBase = process.env.NEXT_PUBLIC_API_BASE_URL
-  if (envBase && !/backend:/.test(envBase)) {
+  if (isLocalPage && envBase && !/backend:/.test(envBase)) {
     return envBase.replace(/^http/, "ws")
   }
-  const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:"
-  return `${proto}//${typeof window !== "undefined" ? window.location.host : ""}`
+  return `${currentProto}//${currentHost}`
 }
 
 /** Float32 PCM → Int16 LE 的 ArrayBuffer（DashScope PCM16 帧格式）。 */

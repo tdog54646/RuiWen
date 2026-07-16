@@ -40,7 +40,10 @@ docker_no_proxy() {
 PLATFORM="$(env_value DOCKER_PLATFORM linux/amd64)"
 BACKEND_IMAGE="$(env_value BACKEND_IMAGE ruiwen-backend)"
 FRONTEND_IMAGE="$(env_value FRONTEND_IMAGE ruiwen-frontend)"
-NEXT_PUBLIC_API_BASE_URL="$(env_value NEXT_PUBLIC_API_BASE_URL http://backend:8080)"
+# 发布镜像中的服务端 API 基址必须使用 Docker 内部地址。
+# 不读取根目录 .env：该文件用于本地开发，常见值是 localhost，若被 Next.js
+# 编译进浏览器代码会导致生产客户端错误访问用户自己的 localhost。
+NEXT_PUBLIC_API_BASE_URL="${NEXT_PUBLIC_API_BASE_URL:-http://backend:8080}"
 
 mkdir -p "$RELEASE_ROOT"
 rm -rf "$RELEASE_DIR"
