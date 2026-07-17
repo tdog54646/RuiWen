@@ -89,6 +89,21 @@ public class AuthController {
     }
 
     /**
+     * Google 登录：校验前端传来的 Google ID Token，签发本系统令牌并自动登录。
+     *
+     * <p>关联策略：优先按 (google, sub) 匹配既有绑定；否则按邮箱合并或新建用户。
+     * 成功后与密码登录一致，签发 Access/Refresh Token。</p>
+     *
+     * @param request     请求体，包含 idToken（前端 GIS 回调拿到的 credential）。
+     * @param httpRequest 用于解析客户端信息（IP 与 User-Agent），记录审计日志。
+     * @return 认证响应，包含用户信息与令牌对。
+     */
+    @PostMapping("/google")
+    public AuthResponse google(@Valid @RequestBody GoogleLoginRequest request, HttpServletRequest httpRequest) {
+        return authService.googleLogin(request.idToken(), resolveClient(httpRequest));
+    }
+
+    /**
      * 使用 Refresh Token 刷新令牌。
      * <p>
      * 校验刷新令牌的合法性与白名单状态，签发新的令牌对，并撤销旧刷新令牌。

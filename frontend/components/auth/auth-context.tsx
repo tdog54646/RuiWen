@@ -9,6 +9,7 @@ export type AuthContextValue = {
   isLoading: boolean
   tokens: AuthTokens | null
   login: (payload: LoginRequest) => Promise<void>
+  loginWithGoogle: (idToken: string) => Promise<void>
   register: (payload: RegisterRequest) => Promise<AuthenticatedUser>
   logout: () => Promise<void>
   refresh: () => Promise<void>

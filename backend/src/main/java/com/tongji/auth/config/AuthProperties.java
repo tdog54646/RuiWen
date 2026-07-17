@@ -12,7 +12,8 @@ import java.time.Duration;
  * <p>包含以下分组：</p>
  * - Jwt：令牌签发与验证配置；
  * - Verification：验证码发送与校验配置；
- * - Password：密码策略与加密强度配置。
+ * - Password：密码策略与加密强度配置；
+ * - OAuth：第三方登录配置（Google 等）。
  */
 @Data
 @ConfigurationProperties(prefix = "auth")
@@ -24,6 +25,8 @@ public class AuthProperties {
     private final Verification verification = new Verification();
     /** 密码策略配置项。 */
     private final Password password = new Password();
+    /** 第三方登录（OAuth）配置项。 */
+    private final OAuth oauth = new OAuth();
 
     @Data
     public static class Jwt {
@@ -65,5 +68,19 @@ public class AuthProperties {
         private int bcryptStrength = 12;
         /** 密码最小长度。 */
         private int minLength = 8;
+    }
+
+    /** 第三方登录（OAuth）配置。 */
+    @Data
+    public static class OAuth {
+        /** Google 登录配置。 */
+        private final Google google = new Google();
+    }
+
+    /** Google OAuth 登录配置。 */
+    @Data
+    public static class Google {
+        /** Google OAuth Client ID，用于校验 ID Token 的 audience。 */
+        private String clientId;
     }
 }

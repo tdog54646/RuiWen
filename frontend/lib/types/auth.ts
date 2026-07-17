@@ -68,6 +68,10 @@ export type RegisterResponse = AuthResponse
 
 export type LoginResponse = AuthResponse
 
+export type GoogleLoginRequest = {
+  idToken: string
+}
+
 export type RefreshResponse = TokenResponse
 
 export type LogoutRequest = {

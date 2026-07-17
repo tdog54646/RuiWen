@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ArrowLeft, Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
+import { GoogleLoginButton } from "@/components/auth/google-login-button"
 import { LineLogo } from "@/components/brand/line-logo"
 import { ApiError } from "@/lib/api/client"
 import {
@@ -152,6 +153,14 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
           {isLoading ? "登录中..." : "登录"}
         </Button>
       </form>
+
+      <div className="mt-6 flex flex-col items-center gap-3">
+        <span className="text-xs text-slate-400">或使用 Google 账号登录</span>
+        <GoogleLoginButton
+          onSuccess={onLoginSuccess}
+          onError={(msg) => setError(msg)}
+        />
+      </div>
 
       <div className="mt-8 text-center text-sm text-slate-500">
         还没有账号？{" "}

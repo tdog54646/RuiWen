@@ -75,6 +75,7 @@ public class SecurityConfig {
                                 "/api/auth/send-code",
                                 "/api/auth/register",
                                 "/api/auth/login",
+                                "/api/auth/google",
                                 "/api/auth/token/refresh",
                                 "/api/auth/logout",
                                 "/api/auth/password/reset"

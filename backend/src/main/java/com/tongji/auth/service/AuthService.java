@@ -7,6 +7,8 @@ import com.tongji.auth.exception.BusinessException;
 import com.tongji.auth.exception.ErrorCode;
 import com.tongji.auth.model.ClientInfo;
 import com.tongji.auth.model.IdentifierType;
+import com.tongji.auth.oauth.GoogleIdTokenVerifier;
+import com.tongji.auth.oauth.GoogleIdentity;
 import com.tongji.auth.registration.RegistrationMode;
 import com.tongji.auth.registration.RegistrationPolicy;
 import com.tongji.auth.registration.RegistrationPolicyService;
@@ -16,7 +18,9 @@ import com.tongji.auth.token.TokenPair;
 import com.tongji.auth.util.IdentifierValidator;
 import com.tongji.auth.verification.*;
 import com.tongji.user.domain.User;
+import com.tongji.user.domain.UserOauth;
 import com.tongji.user.domain.UserStatus;
+import com.tongji.user.mapper.UserOauthMapper;
 import com.tongji.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -57,6 +61,8 @@ public class AuthService {
     private final LoginLogService loginLogService;
     private final AuthProperties authProperties;
     private final RegistrationPolicyService registrationPolicyService;
+    private final UserOauthMapper userOauthMapper;
+    private final GoogleIdTokenVerifier googleIdTokenVerifier;
 
     /** 新用户默认头像。 */
     private static final String DEFAULT_AVATAR = "https://sljava123.oss-cn-hangzhou.aliyuncs.com/avatars/1-1773801182172.jpg";
@@ -197,6 +203,64 @@ public class AuthService {
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         storeRefreshToken(user.getId(), tokenPair);
         loginLogService.record(user.getId(), identifier, channel, clientInfo.ip(), clientInfo.userAgent(), "SUCCESS");
+        return new AuthResponse(mapUser(user), mapToken(tokenPair));
+    }
+
+    /**
+     * Google 登录：校验 ID Token，查找或创建本站用户并补绑，签发本系统令牌。
+     *
+     * <p>关联策略：</p>
+     * - 优先按 (google, sub) 查 user_oauth，命中则直接登录该用户；
+     * - 否则按邮箱查 users，命中则补建 oauth 关联（合并既有账号）；
+     * - 都未命中则创建新用户并建立 oauth 关联。
+     *
+     * <p>要求 Google 邮箱已通过验证（email_verified=true），防止未验证邮箱冒领既有账号。</p>
+     *
+     * @param idToken    前端 GIS 拿到的 Google ID Token。
+     * @param clientInfo 客户端信息（IP/UA），用于登录审计。
+     * @return 认证响应（用户信息 + 本系统令牌对）。
+     * @throws BusinessException 当 ID Token 无效、邮箱未验证或账号被封禁时抛出。
+     */
+    public AuthResponse googleLogin(String idToken, ClientInfo clientInfo) {
+        GoogleIdentity google = googleIdTokenVerifier.verify(idToken);
+        if (!StringUtils.hasText(google.email()) || !google.emailVerified()) {
+            throw new BusinessException(ErrorCode.OAUTH_EMAIL_NOT_VERIFIED);
+        }
+        String email = google.email().trim().toLowerCase(Locale.ROOT);
+        String provider = "google";
+
+        UserOauth link = userOauthMapper.findByProviderAndProviderUserId(provider, google.sub());
+        User user;
+        if (link != null) {
+            user = findUserById(link.getUserId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND));
+        } else {
+            Optional<User> existing = userService.findByEmail(email);
+            if (existing.isPresent()) {
+                user = existing.get();
+            } else {
+                user = User.builder()
+                        .email(email)
+                        .nickname(StringUtils.hasText(google.name()) ? google.name() : generateNickname())
+                        .avatar(StringUtils.hasText(google.picture()) ? google.picture() : DEFAULT_AVATAR)
+                        .bio(null)
+                        .tagsJson("[]")
+                        .build();
+                userService.createUser(user);
+            }
+            UserOauth oauth = UserOauth.builder()
+                    .userId(user.getId())
+                    .provider(provider)
+                    .providerUserId(google.sub())
+                    .createdAt(Instant.now())
+                    .build();
+            userOauthMapper.insert(oauth);
+        }
+        ensureNotBanned(user);
+
+        TokenPair tokenPair = jwtService.issueTokenPair(user);
+        storeRefreshToken(user.getId(), tokenPair);
+        loginLogService.record(user.getId(), email, "GOOGLE", clientInfo.ip(), clientInfo.userAgent(), "SUCCESS");
         return new AuthResponse(mapUser(user), mapToken(tokenPair));
     }
 

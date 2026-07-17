@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tongji.user.mapper.UserOauthMapper">
+
+    <resultMap id="UserOauthResultMap" type="com.tongji.user.domain.UserOauth">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="provider" property="provider"/>
+        <result column="provider_user_id" property="providerUserId"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <select id="findByProviderAndProviderUserId" resultMap="UserOauthResultMap">
+        SELECT *
+        FROM user_oauth
+        WHERE provider = #{provider}
+          AND provider_user_id = #{providerUserId}
+        LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="com.tongji.user.domain.UserOauth"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_oauth (user_id, provider, provider_user_id, created_at)
+        VALUES (#{userId}, #{provider}, #{providerUserId}, #{createdAt})
+    </insert>
+
+</mapper>

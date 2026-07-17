@@ -98,6 +98,19 @@ export function AuthProviderWrapper({ children }: { children: React.ReactNode })
     [fetchUser],
   )
 
+  const loginWithGoogle = useCallback(
+    async (idToken: string) => {
+      const response = await authService.google(idToken)
+      const nextTokens = toTokens(response.token)
+      setTokens(nextTokens)
+      persistTokens(nextTokens)
+      setUser(response.user)
+      persistUser(response.user)
+      await fetchUser(nextTokens.accessToken)
+    },
+    [fetchUser],
+  )
+
   const register = useCallback(
     async (payload: RegisterRequest) => {
       const result = await authService.register(payload)
@@ -163,12 +176,13 @@ export function AuthProviderWrapper({ children }: { children: React.ReactNode })
       tokens: hydrated ? tokens : null,
       isLoading: hydrated ? isLoading : true,
       login,
+      loginWithGoogle,
       register,
       logout,
       refresh,
       reloadUser,
     }),
-    [hydrated, user, tokens, isLoading, login, register, logout, refresh, reloadUser],
+    [hydrated, user, tokens, isLoading, login, loginWithGoogle, register, logout, refresh, reloadUser],
   )
 
   return <ContextProvider value={value}>{children}</ContextProvider>

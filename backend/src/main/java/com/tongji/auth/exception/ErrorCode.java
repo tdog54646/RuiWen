@@ -22,7 +22,9 @@ public enum ErrorCode {
     FORBIDDEN("FORBIDDEN", "无操作权限"),
     LAST_SUPER_ADMIN("LAST_SUPER_ADMIN", "不能降级或封禁最后一个超级管理员"),
     REGISTRATION_DISABLED("REGISTRATION_DISABLED", "注册功能已关闭"),
-    REGISTRATION_MODE_MISMATCH("REGISTRATION_MODE_MISMATCH", "当前注册模式不支持该方式");
+    REGISTRATION_MODE_MISMATCH("REGISTRATION_MODE_MISMATCH", "当前注册模式不支持该方式"),
+    OAUTH_TOKEN_INVALID("OAUTH_TOKEN_INVALID", "第三方登录凭证无效"),
+    OAUTH_EMAIL_NOT_VERIFIED("OAUTH_EMAIL_NOT_VERIFIED", "该 Google 账号邮箱未验证");
 
     private final String code;
     private final String defaultMessage;

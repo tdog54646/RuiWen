@@ -1,6 +1,7 @@
 import { apiFetch } from "./client"
 import type {
   AuthenticatedUser,
+  GoogleLoginRequest,
   LoginRequest,
   LoginResponse,
   LogoutRequest,
@@ -38,6 +39,12 @@ export const authService = {
     apiFetch<LoginResponse>(`${AUTH_PREFIX}/login`, {
       method: "POST",
       body: payload,
+    }),
+
+  google: (idToken: string) =>
+    apiFetch<LoginResponse>(`${AUTH_PREFIX}/google`, {
+      method: "POST",
+      body: { idToken } as GoogleLoginRequest,
     }),
 
   logout: (payload: LogoutRequest, accessToken: string) =>
