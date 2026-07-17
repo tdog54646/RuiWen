@@ -91,6 +91,9 @@ export function AIInput({
             adjustHeight()
           }}
           onKeyDown={(e) => {
+            // 输入法组词中的回车用于上屏，不触发发送（isComposing 为标准信号；
+            // keyCode 229 兼容老 Safari 等未及时翻转 isComposing 的浏览器）
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
               handleSubmit()

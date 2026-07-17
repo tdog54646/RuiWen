@@ -2,6 +2,7 @@ package com.tongji.qa.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tongji.auth.exception.BusinessException;
 import com.tongji.auth.exception.ErrorCode;
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
+import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,7 +37,9 @@ import reactor.core.scheduler.Schedulers;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 多轮问答编排核心。
@@ -120,18 +124,13 @@ public class QaChatService {
         // 4) 用户记忆
         List<UserMemory> memories = safeList(memoryMapper.listEnabledByUser(userId));
 
-        // 5) RAG 检索（按用户隔离过滤；失败则降级为无上下文继续对话）
+        // 5) RAG 上下文（按用户隔离过滤）——仅当模型调用工具时才真正检索，避免每次提问都检索
         RetrievalContext ctx = RetrievalContext.of(userId, RetrievalContext.parseScope(req.scope()));
-        List<RetrievalChunk> chunks;
-        try {
-            chunks = hybridSearchService.hybridSearch(question, topK, ctx);
-        } catch (Exception e) {
-            log.warn("RAG retrieval failed, fallback to no context: {}", e.getMessage());
-            chunks = List.of();
-        }
+        List<SourceRef> sourcesAcc = Collections.synchronizedList(new ArrayList<>());
+        FunctionToolCallback kbTool = buildKnowledgeBaseTool(question, topK, ctx, sourcesAcc);
 
-        // 6) 组装消息列表
-        List<Message> messages = promptAssembler.assemble(question, chunks, history, memories);
+        // 6) 组装消息列表（不再预注入 RAG 上下文，由工具按需检索）
+        List<Message> messages = promptAssembler.assemble(question, List.of(), history, memories);
 
         // 预生成 assistant 消息 ID（用于 meta 事件与异步落库）
         long assistantMessageId = idGen.nextId();
@@ -141,6 +140,7 @@ public class QaChatService {
         List<String> fragments = new ArrayList<>();
         Flux<ServerSentEvent<String>> llmEvents = chatClient.prompt()
                 .messages(messages)
+                .toolCallbacks(kbTool)
                 .options(DeepSeekChatOptions.builder()
                         .model("deepseek-v4-flash")
                         .temperature(0.4)
@@ -161,10 +161,15 @@ public class QaChatService {
                     persistAnswer(userId, conversationId, assistantMessageId, fragments, true);
                 });
 
-        // meta 首发 → LLM 增量 → done
+        // meta 首发 → LLM 增量 → sources（命中知识库时）→ done
         return Flux.just(sse(metaJson))
                 .concatWith(llmEvents)
-                .concatWith(Flux.defer(() -> Flux.just(sse(doneNode()))));
+                .concatWith(Flux.defer(() -> {
+                    if (sourcesAcc.isEmpty()) {
+                        return Flux.just(sse(doneNode()));
+                    }
+                    return Flux.just(sse(toJson(sourcesNode(sourcesAcc))), sse(doneNode()));
+                }));
     }
 
     // -------------------------------------------------------------------------
@@ -277,6 +282,81 @@ public class QaChatService {
     private static <T> List<T> safeList(List<T> list) {
         return list == null ? List.of() : list;
     }
+
+    // -------------------------------------------------------------------------
+    // 知识库工具（按需 RAG）
+    // -------------------------------------------------------------------------
+
+    /**
+     * 构建「知识库检索」工具：模型按需调用，仅在命中时检索并记录来源。
+     * 闭包捕获当前问题的检索参数与来源累加器；检索异常时降级为无上下文，不中断对话。
+     */
+    private FunctionToolCallback buildKnowledgeBaseTool(String question, int topK,
+                                                        RetrievalContext ctx, List<SourceRef> sourcesAcc) {
+        return FunctionToolCallback.builder("search_knowledge_base", (KbSearchInput in) -> {
+                    String q = (in != null && in.query() != null && !in.query().isBlank())
+                            ? in.query() : question;
+                    try {
+                        List<RetrievalChunk> chunks = hybridSearchService.hybridSearch(q, topK, ctx);
+                        for (RetrievalChunk c : chunks) {
+                            sourcesAcc.add(new SourceRef(c.getPostId(), c.getTitle(), c.getRrfScore()));
+                        }
+                        return formatChunksForLlm(chunks);
+                    } catch (Exception e) {
+                        log.warn("KB tool retrieval failed: {}", e.getMessage());
+                        return "（知识库检索失败，请结合常识直接作答，不要编造来源）";
+                    }
+                })
+                .description("当用户提问涉及知识库内容时，检索相关文章片段。闲聊、自我介绍、通用常识问题不要调用。")
+                .inputType(KbSearchInput.class)
+                .build();
+    }
+
+    /** 将检索片段格式化为喂给 LLM 的纯文本（标题分隔 + 正文）。 */
+    private String formatChunksForLlm(List<RetrievalChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return "（未检索到相关内容，请结合常识作答，不要编造来源）";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < chunks.size(); i++) {
+            RetrievalChunk c = chunks.get(i);
+            String label = (c.getTitle() != null && !c.getTitle().isBlank())
+                    ? c.getTitle() : ("来源 " + (i + 1));
+            sb.append("--- [").append(label).append("] ---\n")
+              .append(c.getContent() == null ? "" : c.getContent()).append("\n\n");
+        }
+        return sb.toString();
+    }
+
+    /** 构造 sources 事件：按 postId 去重（保留最高分）、按分降序取 top 3。 */
+    private ObjectNode sourcesNode(List<SourceRef> sources) {
+        List<SourceRef> snapshot;
+        synchronized (sources) {
+            snapshot = new ArrayList<>(sources);
+        }
+        Map<String, SourceRef> best = new LinkedHashMap<>();
+        for (SourceRef s : snapshot) {
+            if (s.postId() == null || s.postId().isBlank() || "unknown".equals(s.postId())) continue;
+            best.merge(s.postId(), s, (a, b) -> a.score() >= b.score() ? a : b);
+        }
+        List<SourceRef> top = best.values().stream()
+                .sorted((a, b) -> Double.compare(b.score(), a.score()))
+                .limit(3)
+                .toList();
+        ArrayNode arr = objectMapper.createArrayNode();
+        for (SourceRef s : top) {
+            arr.add(objectMapper.createObjectNode()
+                    .put("postId", s.postId())
+                    .put("title", s.title() == null ? "" : s.title()));
+        }
+        return objectMapper.createObjectNode().put("type", "sources").set("items", arr);
+    }
+
+    /** 工具入参：检索关键词。 */
+    private record KbSearchInput(String query) {}
+
+    /** 命中来源（含分数），用于去重排序；下发给前端时只取 postId/title。 */
+    private record SourceRef(String postId, String title, double score) {}
 
     // -------------------------------------------------------------------------
     // SSE 事件 JSON 构造

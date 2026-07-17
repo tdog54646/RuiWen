@@ -12,12 +12,19 @@ export type MessageRole = "user" | "assistant"
 
 export type MessageStatus = "streaming" | "completed" | "interrupted" | "error"
 
+/** AI 回答命中知识库后下发的来源文章（用于「为您推荐」）。 */
+export type SourceArticle = {
+  postId: string
+  title: string
+}
+
 export type QaMessage = {
   id: string
   role: MessageRole
   content: string
   status: MessageStatus
   createdAt: string
+  sources?: SourceArticle[]
 }
 
 export type MemorySource = "auto" | "manual"
@@ -52,10 +59,16 @@ export type QaStreamErrorEvent = {
   message: string
 }
 
+export type QaStreamSourcesEvent = {
+  type: "sources"
+  items: SourceArticle[]
+}
+
 export type QaStreamEvent =
   | QaStreamMetaEvent
   | QaStreamDeltaEvent
   | QaStreamDoneEvent
+  | QaStreamSourcesEvent
   | QaStreamErrorEvent
 
 // ---- 请求 DTO ----

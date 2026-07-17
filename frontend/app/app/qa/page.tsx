@@ -11,7 +11,7 @@ import { ChatThread } from "@/components/qa/chat-thread"
 import { ConversationList } from "@/components/qa/conversation-list"
 import { MemoryPanel } from "@/components/qa/memory-panel"
 import { qaChatService } from "@/lib/api/qa-chat"
-import type { Conversation, QaMessage } from "@/lib/types"
+import type { Conversation, QaMessage, SourceArticle } from "@/lib/types"
 
 const SUGGESTIONS = [
   "Line 的知识库能回答哪些问题？",
@@ -38,6 +38,8 @@ export default function QAPage() {
   const abortRef = useRef<AbortController | null>(null)
   const streamBuf = useRef("")
   const activeIdRef = useRef<string | null>(null)
+  // 当轮命中的知识库来源，流结束后挂到 assistant 消息
+  const pendingSourcesRef = useRef<SourceArticle[] | undefined>(undefined)
 
   const refreshConversations = useCallback(async () => {
     if (!user) return
@@ -111,7 +113,9 @@ export default function QAPage() {
 
   const finalizeAssistant = useCallback(() => {
     const text = streamBuf.current
+    const sources = pendingSourcesRef.current
     streamBuf.current = ""
+    pendingSourcesRef.current = undefined
     setStreamingContent("")
     if (text.trim()) {
       setMessages((prev) => [
@@ -122,6 +126,7 @@ export default function QAPage() {
           content: text,
           status: "completed",
           createdAt: new Date().toISOString(),
+          sources,
         },
       ])
     }
@@ -147,6 +152,7 @@ export default function QAPage() {
         },
       ])
       streamBuf.current = ""
+      pendingSourcesRef.current = undefined
       setStreamingContent("")
       setError(null)
       setIsStreaming(true)
@@ -171,6 +177,8 @@ export default function QAPage() {
             } else if (evt.type === "delta") {
               streamBuf.current += evt.content
               setStreamingContent(streamBuf.current)
+            } else if (evt.type === "sources") {
+              pendingSourcesRef.current = evt.items
             } else if (evt.type === "error") {
               setError(evt.message)
             }

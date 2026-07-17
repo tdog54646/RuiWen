@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect, useRef } from "react"
+import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { ArrowRight, Bot, Sparkles } from "lucide-react"
 import { MarkdownRenderer } from "@/components/ui/markdown-renderer"
 import { cn } from "@/lib/utils"
-import type { MessageRole, QaMessage } from "@/lib/types"
+import type { MessageRole, QaMessage, SourceArticle } from "@/lib/types"
 
 export function ChatThread({
   messages,
@@ -39,7 +40,7 @@ export function ChatThread({
         ) : (
           <AnimatePresence initial={false}>
             {messages.map((m) => (
-              <MessageItem key={m.id} role={m.role} content={m.content} />
+              <MessageItem key={m.id} role={m.role} content={m.content} sources={m.sources} />
             ))}
             {(isStreaming || streamingContent) && (
               <MessageItem
@@ -107,10 +108,12 @@ function MessageItem({
   role,
   content,
   streaming,
+  sources,
 }: {
   role: MessageRole
   content: string
   streaming?: boolean
+  sources?: SourceArticle[]
 }) {
   if (role === "user") {
     return (
@@ -147,7 +150,37 @@ function MessageItem({
         {streaming && (
           <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse rounded-full bg-violet-500 align-middle" />
         )}
+        {sources && sources.length > 0 && <Recommendations sources={sources} />}
       </div>
     </motion.div>
+  )
+}
+
+/** 回答下方「为您推荐」：命中知识库的文章，点击跳转详情页。 */
+function Recommendations({ sources }: { sources: SourceArticle[] }) {
+  return (
+    <div className="mt-3 rounded-xl border border-white/60 bg-white/40 p-3 backdrop-blur-md">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+        <Sparkles className="size-3.5 text-violet-500" />
+        为您推荐
+      </div>
+      <ol className="space-y-1.5">
+        {sources.map((s, i) => (
+          <li key={s.postId}>
+            <Link
+              href={`/app/posts/${s.postId}`}
+              className="group flex items-start gap-2 text-sm text-slate-600 transition-colors hover:text-violet-600"
+            >
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded bg-violet-100 text-[11px] font-medium text-violet-600">
+                {i + 1}
+              </span>
+              <span className="underline-offset-2 group-hover:underline">
+                {s.title || "未命名文章"}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </div>
   )
 }

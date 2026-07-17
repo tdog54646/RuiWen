@@ -94,6 +94,7 @@ export function PostCard({
   const [menuLoading, setMenuLoading] = useState(false)
   const [menuError, setMenuError] = useState<string | null>(null)
   const [localIsTop, setLocalIsTop] = useState(isTop)
+  const [localVisible, setLocalVisible] = useState(visible)
   const btnRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -128,6 +129,7 @@ export function PostCard({
     setMenuLoading(true)
     try {
       await knowpostService.setVisibility(id, next, tokens.accessToken)
+      setLocalVisible(next)
       setMenuOpen(false)
       onChanged?.("visibility", { visible: next })
       toast.success(`已设为${next === "public" ? "公开" : "私密"}`)
@@ -203,16 +205,16 @@ export function PostCard({
             </span>
           )}
         </div>
-        {visible && (
+        {localVisible && (
           <span
             className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-              visible === "public"
+              localVisible === "public"
                 ? "bg-emerald-100 text-emerald-700"
                 : "bg-slate-200 text-slate-600"
             }`}
           >
-            {visible === "public" ? <Globe className="size-3" /> : <Lock className="size-3" />}
-            {visible === "public" ? "公开" : "私密"}
+            {localVisible === "public" ? <Globe className="size-3" /> : <Lock className="size-3" />}
+            {localVisible === "public" ? "公开" : "私密"}
           </span>
         )}
       </div>

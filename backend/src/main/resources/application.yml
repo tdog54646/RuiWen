@@ -221,7 +221,7 @@ qa:
     summary-max-tokens: 1024 # 记忆总结 LLM 最大生成 token 数
   chat:
     default-top-k: 5         # 默认 RAG 检索 Chunk 数量上限
-    default-max-tokens: 1024 # 默认 LLM 最大生成 token 数
+    default-max-tokens: 8192 # 默认 LLM 最大生成 token 数（DeepSeek 常见输出上限）
 
 # ---------------------------------------------------------------------------
 # 语音转文字（ASR）配置 —— 对应 AsrProperties

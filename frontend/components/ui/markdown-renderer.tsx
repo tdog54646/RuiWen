@@ -27,7 +27,9 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        // detect: 无语言标识的代码块自动检测语言并补 hljs 类，
+        // 否则会退回 prose 默认浅色字、落在浅灰 pre 底上对比度极低（偏暗）
+        rehypePlugins={[[rehypeHighlight, { detect: true }]]}
       >
         {content}
       </ReactMarkdown>
