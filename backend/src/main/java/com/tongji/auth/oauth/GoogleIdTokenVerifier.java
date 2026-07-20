@@ -4,6 +4,7 @@ import com.tongji.auth.config.AuthProperties;
 import com.tongji.auth.exception.BusinessException;
 import com.tongji.auth.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2Error;
@@ -32,6 +33,7 @@ import java.net.InetSocketAddress;
  * 也可用 {@code auth.oauth.google.jwks-uri} 指向自建反代。解码器懒初始化并复用 JWKS 缓存，
  * 拉取公钥带超时，避免网络不通时挂起请求。</p>
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class GoogleIdTokenVerifier {
@@ -66,6 +68,8 @@ public class GoogleIdTokenVerifier {
                     jwt.getClaimAsString("picture")
             );
         } catch (JwtException ex) {
+            log.warn("Google ID Token 校验失败: {} | cause: {}", ex.getMessage(),
+                    ex.getCause() == null ? "" : ex.getCause().getMessage());
             throw new BusinessException(ErrorCode.OAUTH_TOKEN_INVALID);
         }
     }
