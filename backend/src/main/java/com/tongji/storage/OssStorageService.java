@@ -4,18 +4,26 @@ import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
+import com.aliyun.oss.model.ObjectMetadata;
 import com.aliyun.oss.model.PutObjectRequest;
+import com.aliyun.oss.model.PutObjectResult;
 import com.tongji.auth.exception.BusinessException;
 import com.tongji.auth.exception.ErrorCode;
+import com.tongji.storage.api.dto.ContentUploadResult;
 import com.tongji.storage.config.OssProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Date;
+import java.util.HexFormat;
 
 @Service
 @RequiredArgsConstructor
@@ -45,6 +53,42 @@ public class OssStorageService {
         }
 
         return publicUrl(objectKey);
+    }
+
+    /**
+     * 服务端直接上传文章 Markdown 正文到 OSS（用于 AI 录入文章）。
+     * objectKey 规则与前端直传一致：posts/{postId}/content.md。
+     *
+     * @param postId   文章 ID
+     * @param markdown 正文 Markdown（UTF-8）
+     * @return 含 objectKey/etag/size/sha256 的上传结果
+     */
+    public ContentUploadResult uploadPostContent(long postId, String markdown) {
+        ensureConfigured();
+        String objectKey = "posts/" + postId + "/content.md";
+        byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
+
+        OSS client = new OSSClientBuilder().build(props.getEndpoint(), props.getAccessKeyId(), props.getAccessKeySecret());
+        try {
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentType("text/markdown");
+            metadata.setContentLength(bytes.length);
+            PutObjectRequest request = new PutObjectRequest(props.getBucket(), objectKey,
+                    new ByteArrayInputStream(bytes), metadata);
+            PutObjectResult result = client.putObject(request);
+            return new ContentUploadResult(objectKey, publicUrl(objectKey), result.getETag(), bytes.length, sha256Hex(bytes));
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    private static String sha256Hex(byte[] bytes) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            return "";
+        }
     }
 
     private String publicUrl(String objectKey) {

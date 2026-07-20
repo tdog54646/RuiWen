@@ -18,6 +18,14 @@ export type SourceArticle = {
   title: string
 }
 
+/** AI 录入文章生成的草稿摘要（用于「草稿卡片」）。 */
+export type DraftPayload = {
+  postId: string
+  title: string
+  tags: string[]
+  preview: string
+}
+
 export type QaMessage = {
   id: string
   role: MessageRole
@@ -25,6 +33,7 @@ export type QaMessage = {
   status: MessageStatus
   createdAt: string
   sources?: SourceArticle[]
+  draft?: DraftPayload
 }
 
 export type MemorySource = "auto" | "manual"
@@ -64,11 +73,20 @@ export type QaStreamSourcesEvent = {
   items: SourceArticle[]
 }
 
+export type QaStreamDraftEvent = {
+  type: "draft"
+  postId: string
+  title: string
+  tags: string[]
+  preview: string
+}
+
 export type QaStreamEvent =
   | QaStreamMetaEvent
   | QaStreamDeltaEvent
   | QaStreamDoneEvent
   | QaStreamSourcesEvent
+  | QaStreamDraftEvent
   | QaStreamErrorEvent
 
 // ---- 请求 DTO ----

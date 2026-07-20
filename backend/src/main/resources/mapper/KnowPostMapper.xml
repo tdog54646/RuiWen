@@ -171,4 +171,11 @@
         SELECT id FROM know_posts WHERE status = 'published' ORDER BY id
     </select>
 
+    <select id="findLatestDraftId" parameterType="long" resultType="java.lang.Long">
+        SELECT id FROM know_posts
+        WHERE creator_id = #{creatorId} AND status = 'draft'
+        ORDER BY create_time DESC
+        LIMIT 1
+    </select>
+
 </mapper>

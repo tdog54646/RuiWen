@@ -5,8 +5,9 @@ import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { ArrowRight, Bot, Sparkles } from "lucide-react"
 import { MarkdownRenderer } from "@/components/ui/markdown-renderer"
+import { DraftCard } from "@/components/qa/draft-card"
 import { cn } from "@/lib/utils"
-import type { MessageRole, QaMessage, SourceArticle } from "@/lib/types"
+import type { DraftPayload, MessageRole, QaMessage, SourceArticle } from "@/lib/types"
 
 export function ChatThread({
   messages,
@@ -40,7 +41,7 @@ export function ChatThread({
         ) : (
           <AnimatePresence initial={false}>
             {messages.map((m) => (
-              <MessageItem key={m.id} role={m.role} content={m.content} sources={m.sources} />
+              <MessageItem key={m.id} role={m.role} content={m.content} sources={m.sources} draft={m.draft} />
             ))}
             {(isStreaming || streamingContent) && (
               <MessageItem
@@ -109,11 +110,13 @@ function MessageItem({
   content,
   streaming,
   sources,
+  draft,
 }: {
   role: MessageRole
   content: string
   streaming?: boolean
   sources?: SourceArticle[]
+  draft?: DraftPayload
 }) {
   if (role === "user") {
     return (
@@ -151,6 +154,7 @@ function MessageItem({
           <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse rounded-full bg-violet-500 align-middle" />
         )}
         {sources && sources.length > 0 && <Recommendations sources={sources} />}
+        {draft && <DraftCard draft={draft} />}
       </div>
     </motion.div>
   )

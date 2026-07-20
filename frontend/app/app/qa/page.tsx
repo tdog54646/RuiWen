@@ -11,7 +11,7 @@ import { ChatThread } from "@/components/qa/chat-thread"
 import { ConversationList } from "@/components/qa/conversation-list"
 import { MemoryPanel } from "@/components/qa/memory-panel"
 import { qaChatService } from "@/lib/api/qa-chat"
-import type { Conversation, QaMessage, SourceArticle } from "@/lib/types"
+import type { Conversation, DraftPayload, QaMessage, SourceArticle } from "@/lib/types"
 
 const SUGGESTIONS = [
   "Line 的知识库能回答哪些问题？",
@@ -40,6 +40,8 @@ export default function QAPage() {
   const activeIdRef = useRef<string | null>(null)
   // 当轮命中的知识库来源，流结束后挂到 assistant 消息
   const pendingSourcesRef = useRef<SourceArticle[] | undefined>(undefined)
+  // 当轮 AI 生成的文章草稿，流结束后挂到 assistant 消息
+  const pendingDraftRef = useRef<DraftPayload | undefined>(undefined)
 
   const refreshConversations = useCallback(async () => {
     if (!user) return
@@ -114,8 +116,10 @@ export default function QAPage() {
   const finalizeAssistant = useCallback(() => {
     const text = streamBuf.current
     const sources = pendingSourcesRef.current
+    const draft = pendingDraftRef.current
     streamBuf.current = ""
     pendingSourcesRef.current = undefined
+    pendingDraftRef.current = undefined
     setStreamingContent("")
     if (text.trim()) {
       setMessages((prev) => [
@@ -127,6 +131,7 @@ export default function QAPage() {
           status: "completed",
           createdAt: new Date().toISOString(),
           sources,
+          draft,
         },
       ])
     }
@@ -153,6 +158,7 @@ export default function QAPage() {
       ])
       streamBuf.current = ""
       pendingSourcesRef.current = undefined
+      pendingDraftRef.current = undefined
       setStreamingContent("")
       setError(null)
       setIsStreaming(true)
@@ -179,6 +185,13 @@ export default function QAPage() {
               setStreamingContent(streamBuf.current)
             } else if (evt.type === "sources") {
               pendingSourcesRef.current = evt.items
+            } else if (evt.type === "draft") {
+              pendingDraftRef.current = {
+                postId: evt.postId,
+                title: evt.title,
+                tags: evt.tags ?? [],
+                preview: evt.preview,
+              }
             } else if (evt.type === "error") {
               setError(evt.message)
             }

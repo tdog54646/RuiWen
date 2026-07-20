@@ -49,4 +49,7 @@ public interface KnowPostMapper {
 
     // 列出所有已发布知文ID（含非公开），供后台全量索引重建遍历
     List<Long> listAllPublishedIds();
+
+    // 该用户最近一篇草稿 ID（用于 AI 录入后发布；无草稿返回 null）
+    Long findLatestDraftId(@Param("creatorId") long creatorId);
 }

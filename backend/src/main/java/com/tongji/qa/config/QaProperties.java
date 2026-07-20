@@ -20,6 +20,9 @@ public class QaProperties {
     /** 问答默认参数。 */
     private Chat chat = new Chat();
 
+    /** AI 录入文章相关配置。 */
+    private Post post = new Post();
+
     @Data
     public static class Memory {
         /** 每累计 N 条新消息触发一次自动记忆更新。 */
@@ -36,5 +39,11 @@ public class QaProperties {
         private int defaultTopK = 5;
         /** 默认 LLM 最大生成 token 数。 */
         private int defaultMaxTokens = 1024;
+    }
+
+    @Data
+    public static class Post {
+        /** AI 生成文章正文的最大 token 数。 */
+        private int draftMaxTokens = 2048;
     }
 }

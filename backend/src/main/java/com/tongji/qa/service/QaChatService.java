@@ -40,6 +40,11 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import com.tongji.knowpost.mapper.KnowPostMapper;
+import com.tongji.knowpost.model.KnowPost;
+import com.tongji.knowpost.service.KnowPostService;
+import com.tongji.llm.service.PostDraftService;
 
 /**
  * 多轮问答编排核心。
@@ -70,6 +75,9 @@ public class QaChatService {
     private final QaProperties properties;
     private final QaEventProducer qaEventProducer;
     private final ObjectMapper objectMapper;
+    private final PostDraftService postDraftService;
+    private final KnowPostService knowPostService;
+    private final KnowPostMapper knowPostMapper;
 
     // -------------------------------------------------------------------------
     // 多轮流式问答
@@ -128,6 +136,9 @@ public class QaChatService {
         RetrievalContext ctx = RetrievalContext.of(userId, RetrievalContext.parseScope(req.scope()));
         List<SourceRef> sourcesAcc = Collections.synchronizedList(new ArrayList<>());
         FunctionToolCallback kbTool = buildKnowledgeBaseTool(question, topK, ctx, sourcesAcc);
+        AtomicReference<DraftPayload> draftAcc = new AtomicReference<>();
+        FunctionToolCallback draftTool = buildDraftPostTool(userId, draftAcc);
+        FunctionToolCallback publishTool = buildPublishPostTool(userId);
 
         // 6) 组装消息列表（不再预注入 RAG 上下文，由工具按需检索）
         List<Message> messages = promptAssembler.assemble(question, List.of(), history, memories);
@@ -140,7 +151,7 @@ public class QaChatService {
         List<String> fragments = new ArrayList<>();
         Flux<ServerSentEvent<String>> llmEvents = chatClient.prompt()
                 .messages(messages)
-                .toolCallbacks(kbTool)
+                .toolCallbacks(kbTool, draftTool, publishTool)
                 .options(DeepSeekChatOptions.builder()
                         .model("deepseek-v4-flash")
                         .temperature(0.4)
@@ -165,10 +176,16 @@ public class QaChatService {
         return Flux.just(sse(metaJson))
                 .concatWith(llmEvents)
                 .concatWith(Flux.defer(() -> {
-                    if (sourcesAcc.isEmpty()) {
-                        return Flux.just(sse(doneNode()));
+                    List<ServerSentEvent<String>> tail = new ArrayList<>();
+                    if (!sourcesAcc.isEmpty()) {
+                        tail.add(sse(toJson(sourcesNode(sourcesAcc))));
                     }
-                    return Flux.just(sse(toJson(sourcesNode(sourcesAcc))), sse(doneNode()));
+                    DraftPayload draft = draftAcc.get();
+                    if (draft != null) {
+                        tail.add(sse(toJson(draftNode(draft))));
+                    }
+                    tail.add(sse(doneNode()));
+                    return Flux.fromIterable(tail);
                 }));
     }
 
@@ -312,6 +329,79 @@ public class QaChatService {
                 .build();
     }
 
+    /**
+     * 构建「录入文章」工具：收齐 title/topic 后由后端生成正文并落库为草稿，草稿摘要写入 draftAcc。
+     */
+    private FunctionToolCallback buildDraftPostTool(long userId, AtomicReference<DraftPayload> draftAcc) {
+        return FunctionToolCallback.builder("draft_post", (DraftPostInput in) -> {
+                    String title = in.title();
+                    String topic = in.topic();
+                    if (title == null || title.isBlank() || topic == null || topic.isBlank()) {
+                        return "缺少必填字段 title 或 topic，请先向用户询问后再调用本工具。";
+                    }
+                    try {
+                        List<String> tags = in.tags() == null ? List.of() : in.tags();
+                        PostDraftService.DraftResult r = postDraftService.createDraft(userId, title.trim(), topic.trim(), tags);
+                        draftAcc.set(new DraftPayload(r.postId(), r.title(), r.tags(), r.preview()));
+                        return "草稿已生成（postId=" + r.postId() + "）。请如实告知用户：草稿已准备好；"
+                                + "确认无误请回复「发布」，需要修改请说明。";
+                    } catch (Exception e) {
+                        log.warn("draft_post failed (user={})", userId, e);
+                        return "草稿生成失败，请稍后重试。";
+                    }
+                })
+                .description("录入一篇新文章并生成草稿。调用前必须先从用户处取得 title（标题）与 topic（主题要点）；"
+                        + "正文由本工具自动生成。tags 可选（标签数组，可留空）。")
+                .inputType(DraftPostInput.class)
+                .build();
+    }
+
+    /**
+     * 构建「发布文章」工具：发布当前用户的草稿。仅在用户明确表达发布意图时由模型调用。
+     * <p>不强依赖 LLM 传准 18 位 postId（雪花 ID 经 LLM 传递易出错）：传入且归属本人+草稿态则用之，
+     * 否则回退到该用户最近一篇草稿。
+     */
+    private FunctionToolCallback buildPublishPostTool(long userId) {
+        return FunctionToolCallback.builder("publish_post", (PublishPostInput in) -> {
+                    try {
+                        Long targetId = resolvePublishTarget(userId, in.postId());
+                        if (targetId == null) {
+                            return "未找到可发布的草稿，请先调用 draft_post 生成草稿后再发布。";
+                        }
+                        knowPostService.publish(userId, targetId);
+                        return "文章已发布（postId=" + targetId + "）。";
+                    } catch (Exception e) {
+                        log.warn("publish_post failed (user={})", userId, e);
+                        return "发布失败，请稍后重试。";
+                    }
+                })
+                .description("发布文章。仅在用户明确表达发布意图（如「发布」「确认发布」「可以发布了」）时调用。"
+                        + "postId 可选——传入则发布该篇，未传或无效则发布用户最近一篇草稿。用户若未明确确认，不要调用。")
+                .inputType(PublishPostInput.class)
+                .build();
+    }
+
+    /** 解析发布目标：优先用 LLM 传入的 postId（需归属本人且为 draft），否则回退到本人最近草稿。 */
+    private Long resolvePublishTarget(long userId, String postIdStr) {
+        if (postIdStr != null && !postIdStr.isBlank()) {
+            try {
+                long pid = Long.parseLong(postIdStr.trim());
+                if (isPublishableDraft(userId, pid)) {
+                    return pid;
+                }
+            } catch (NumberFormatException ignore) {
+                // 传入非合法数字，回退到最近草稿
+            }
+        }
+        return knowPostMapper.findLatestDraftId(userId);
+    }
+
+    private boolean isPublishableDraft(long userId, long postId) {
+        KnowPost post = knowPostMapper.findById(postId);
+        return post != null && post.getCreatorId() != null
+                && post.getCreatorId() == userId && "draft".equals(post.getStatus());
+    }
+
     /** 将检索片段格式化为喂给 LLM 的纯文本（标题分隔 + 正文）。 */
     private String formatChunksForLlm(List<RetrievalChunk> chunks) {
         if (chunks == null || chunks.isEmpty()) {
@@ -352,8 +442,33 @@ public class QaChatService {
         return objectMapper.createObjectNode().put("type", "sources").set("items", arr);
     }
 
+    /** 构造 draft 事件：下发草稿摘要供前端渲染草稿卡片。 */
+    private ObjectNode draftNode(DraftPayload draft) {
+        ObjectNode node = objectMapper.createObjectNode().put("type", "draft")
+                .put("postId", draft.postId())
+                .put("title", draft.title() == null ? "" : draft.title())
+                .put("preview", draft.preview() == null ? "" : draft.preview());
+        ArrayNode tags = node.putArray("tags");
+        if (draft.tags() != null) {
+            for (String t : draft.tags()) {
+                tags.add(t == null ? "" : t);
+            }
+        }
+        return node;
+    }
+
     /** 工具入参：检索关键词。 */
     private record KbSearchInput(String query) {}
+
+    /** 工具入参：录入文章。tags 可选。 */
+    private record DraftPostInput(String title, String topic,
+                                  @org.springframework.ai.tool.annotation.ToolParam(required = false) List<String> tags) {}
+
+    /** 工具入参：发布文章。postId 可选。 */
+    private record PublishPostInput(@org.springframework.ai.tool.annotation.ToolParam(required = false) String postId) {}
+
+    /** 草稿摘要，经 SSE draft 事件下发前端。 */
+    private record DraftPayload(String postId, String title, List<String> tags, String preview) {}
 
     /** 命中来源（含分数），用于去重排序；下发给前端时只取 postId/title。 */
     private record SourceRef(String postId, String title, double score) {}
