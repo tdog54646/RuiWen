@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog, type ConfirmState } from "@/components/admin/dialogs"
 import { ArrowLeft } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
 import { adminService } from "@/lib/api/admin"
@@ -20,6 +21,7 @@ export default function AdminConversationDetailPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [page, setPage] = useState(1)
   const size = 50
 
@@ -43,7 +45,6 @@ export default function AdminConversationDetailPage() {
   }, [tokens?.accessToken, conversationId, page])
 
   const handleDeleteMessage = async (id: string) => {
-    if (!window.confirm("确认删除该消息？此操作不可恢复。")) return
     setBusyId(id)
     setError("")
     try {
@@ -97,7 +98,13 @@ export default function AdminConversationDetailPage() {
                     variant="outline"
                     className="h-6 px-2 text-xs text-red-600"
                     disabled={busyId === m.id}
-                    onClick={() => handleDeleteMessage(m.id)}
+                    onClick={() => setConfirm({
+                      title: "删除消息",
+                      description: "确认删除该消息？此操作不可恢复。",
+                      danger: true,
+                      confirmText: "删除",
+                      onConfirm: () => handleDeleteMessage(m.id),
+                    })}
                   >
                     删除
                   </Button>
@@ -118,6 +125,9 @@ export default function AdminConversationDetailPage() {
           </div>
         </div>
       )}
+
+      {/* 删除确认弹窗 */}
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   )
 }

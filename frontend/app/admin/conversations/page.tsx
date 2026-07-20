@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog, type ConfirmState } from "@/components/admin/dialogs"
 import { useAuth } from "@/components/auth/auth-context"
 import { adminService } from "@/lib/api/admin"
 import { ApiError } from "@/lib/api/client"
@@ -21,6 +22,7 @@ export default function AdminConversationsPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const size = 20
 
   const load = async () => {
@@ -49,7 +51,6 @@ export default function AdminConversationsPage() {
   }, [tokens?.accessToken, page])
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("确认删除该会话？（软删除，用户将不再看到）")) return
     setBusyId(id)
     setError("")
     try {
@@ -134,7 +135,13 @@ export default function AdminConversationsPage() {
                       variant="outline"
                       className="h-7 px-2 text-xs text-red-600"
                       disabled={busyId === c.id || c.deleted}
-                      onClick={() => handleDelete(c.id)}
+                      onClick={() => setConfirm({
+                        title: "删除会话",
+                        description: "确认删除该会话？此为软删除，用户将不再看到该会话。",
+                        danger: true,
+                        confirmText: "删除",
+                        onConfirm: () => handleDelete(c.id),
+                      })}
                     >
                       删除
                     </Button>
@@ -156,6 +163,9 @@ export default function AdminConversationsPage() {
           </div>
         </div>
       )}
+
+      {/* 删除确认弹窗 */}
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   )
 }

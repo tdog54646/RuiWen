@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog, OptionDialog, type ConfirmState, type OptionItem } from "@/components/admin/dialogs"
 import { useAuth } from "@/components/auth/auth-context"
 import { adminService } from "@/lib/api/admin"
 import { ApiError } from "@/lib/api/client"
@@ -17,6 +18,12 @@ const STATUS_BADGE: Record<string, string> = {
   rejected: "bg-amber-100 text-amber-700",
 }
 
+const VIS_OPTIONS: OptionItem[] = [
+  { value: "public", label: "公开", desc: "所有人可见" },
+  { value: "private", label: "私密", desc: "仅作者自己可见" },
+  { value: "followers", label: "仅粉丝", desc: "仅关注者可见" },
+]
+
 export default function AdminPostsPage() {
   const { tokens } = useAuth()
   const [keyword, setKeyword] = useState("")
@@ -27,6 +34,9 @@ export default function AdminPostsPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
+  const [visTarget, setVisTarget] = useState<AdminKnowPostItem | null>(null)
+  const [visValue, setVisValue] = useState("public")
   const size = 20
 
   const load = async () => {
@@ -61,10 +71,16 @@ export default function AdminPostsPage() {
     }
   }
 
-  const handleVisibility = (item: AdminKnowPostItem) => {
-    const next = window.prompt("设置可见性（public / private / followers）", item.visible)
-    if (!next) return
-    run(item.id, () => adminService.updatePostVisibility(tokens!.accessToken, item.id, next.trim()))
+  const openVisibility = (item: AdminKnowPostItem) => {
+    setVisTarget(item)
+    setVisValue(item.visible)
+  }
+
+  const confirmVisibility = () => {
+    if (!visTarget) return
+    return run(visTarget.id, () =>
+      adminService.updatePostVisibility(tokens!.accessToken, visTarget.id, visValue),
+    )
   }
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1
@@ -128,7 +144,7 @@ export default function AdminPostsPage() {
                 <td className="px-4 py-3 text-slate-500">{p.createTime ? new Date(p.createTime).toLocaleString() : "-"}</td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" className="h-7 px-2 text-xs" disabled={busyId === p.id} onClick={() => handleVisibility(p)}>可见性</Button>
+                    <Button variant="outline" className="h-7 px-2 text-xs" disabled={busyId === p.id} onClick={() => openVisibility(p)}>可见性</Button>
                     <Button
                       variant="outline"
                       className="h-7 px-2 text-xs"
@@ -141,7 +157,13 @@ export default function AdminPostsPage() {
                       variant="outline"
                       className="h-7 px-2 text-xs text-red-600"
                       disabled={busyId === p.id || p.status === "deleted"}
-                      onClick={() => { if (window.confirm("确认删除该知文？（软删除）")) run(p.id, () => adminService.deletePost(tokens!.accessToken, p.id)) }}
+                      onClick={() => setConfirm({
+                        title: "删除知文",
+                        description: "确认删除该知文？此操作为软删除。",
+                        danger: true,
+                        confirmText: "删除",
+                        onConfirm: () => run(p.id, () => adminService.deletePost(tokens!.accessToken, p.id)),
+                      })}
                     >
                       删除
                     </Button>
@@ -163,6 +185,23 @@ export default function AdminPostsPage() {
           </div>
         </div>
       )}
+
+      {/* 删除确认弹窗 */}
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+
+      {/* 设置可见性弹窗（单选） */}
+      <OptionDialog
+        open={!!visTarget}
+        title="设置可见性"
+        description="选择该知文的可见范围"
+        options={VIS_OPTIONS}
+        value={visValue}
+        onChange={setVisValue}
+        onConfirm={confirmVisibility}
+        onClose={() => setVisTarget(null)}
+        confirmText="保存"
+        confirmDisabled={!visTarget || visValue === visTarget?.visible}
+      />
     </div>
   )
 }

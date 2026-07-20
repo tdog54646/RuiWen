@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog, type ConfirmState } from "@/components/admin/dialogs"
 import { useAuth } from "@/components/auth/auth-context"
 import { adminService } from "@/lib/api/admin"
 import { ApiError } from "@/lib/api/client"
@@ -27,6 +28,7 @@ export default function AdminIndexPage() {
   const [postId, setPostId] = useState("")
   const [busy, setBusy] = useState(false)
   const [rebuild, setRebuild] = useState<RebuildStatus | null>(null)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
 
   const loadStats = useCallback(async () => {
     if (!tokens?.accessToken) return
@@ -149,11 +151,13 @@ export default function AdminIndexPage() {
             variant="outline"
             className="h-9 text-red-600"
             disabled={busy || !postId.trim()}
-            onClick={() => {
-              if (window.confirm(`确认删除知文 ${postId} 的向量切片？`)) {
-                runOne(() => adminService.deleteRagPostIndex(tokens!.accessToken, postId.trim()))
-              }
-            }}
+            onClick={() => setConfirm({
+              title: "删除向量切片",
+              description: `确认删除知文 ${postId.trim()} 的向量切片？`,
+              danger: true,
+              confirmText: "删除",
+              onConfirm: () => runOne(() => adminService.deleteRagPostIndex(tokens!.accessToken, postId.trim())),
+            })}
           >
             删除切片
           </Button>
@@ -193,6 +197,9 @@ export default function AdminIndexPage() {
           全量重建会遍历所有已发布知文重新生成向量切片（含非公开，进入作者私有库）。每篇需拉取正文 + embedding，数据量大时耗时较长，可关闭页面、稍后回来查看进度。
         </p>
       </div>
+
+      {/* 删除确认弹窗 */}
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   )
 }

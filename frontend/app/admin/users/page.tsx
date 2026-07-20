@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog, OptionDialog, type ConfirmState, type OptionItem } from "@/components/admin/dialogs"
 import { useAuth } from "@/components/auth/auth-context"
 import { adminService } from "@/lib/api/admin"
 import { ApiError } from "@/lib/api/client"
@@ -21,7 +22,7 @@ const ROLE_BADGE: Record<string, string> = {
   SUPER_ADMIN: "bg-violet-100 text-violet-700",
 }
 
-const ROLE_OPTIONS: { value: string; label: string; desc: string }[] = [
+const ROLE_OPTIONS: OptionItem[] = [
   { value: "USER", label: "普通用户", desc: "仅可使用前台功能" },
   { value: "ADMIN", label: "管理员", desc: "可访问后台管理" },
   { value: "SUPER_ADMIN", label: "超级管理员", desc: "全部权限，含改角色 / 系统配置" },
@@ -42,7 +43,7 @@ export default function AdminUsersPage() {
   const [resetResult, setResetResult] = useState<{ id: number; password: string } | null>(null)
   const [roleTarget, setRoleTarget] = useState<AdminUserListItem | null>(null)
   const [selectedRole, setSelectedRole] = useState<string>("USER")
-  const [roleSaving, setRoleSaving] = useState(false)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
 
   const size = 20
 
@@ -86,21 +87,16 @@ export default function AdminUsersPage() {
 
   const confirmRoleChange = async () => {
     if (!roleTarget) return
-    setRoleSaving(true)
     setError("")
     try {
       await adminService.updateUserRole(tokens!.accessToken, roleTarget.id, selectedRole)
-      setRoleTarget(null)
       await load()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "操作失败")
-    } finally {
-      setRoleSaving(false)
     }
   }
 
   const handleResetPassword = async (id: number) => {
-    if (!window.confirm("确认重置该用户密码？将生成新密码并强制其下线。")) return
     setBusyId(id)
     setError("")
     try {
@@ -226,7 +222,13 @@ export default function AdminUsersPage() {
                           variant="outline"
                           className="h-7 px-2 text-xs"
                           disabled={busyId === u.id}
-                          onClick={() => handleResetPassword(u.id)}
+                          onClick={() => setConfirm({
+                            title: "重置密码",
+                            description: "确认重置该用户密码？将生成新密码并强制其下线。",
+                            danger: true,
+                            confirmText: "重置",
+                            onConfirm: () => handleResetPassword(u.id),
+                          })}
                         >
                           重置密码
                         </Button>
@@ -252,58 +254,22 @@ export default function AdminUsersPage() {
         </div>
       )}
 
+      {/* 重置密码确认弹窗 */}
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+
       {/* 修改角色弹窗（单选） */}
-      {roleTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          onClick={() => setRoleTarget(null)}
-        >
-          <div
-            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-sm font-semibold text-slate-800">
-              修改角色 · <span className="text-slate-600">{roleTarget.nickname}</span>
-            </div>
-            <div className="mt-4 space-y-2">
-              {ROLE_OPTIONS.map((opt) => {
-                const active = selectedRole === opt.value
-                return (
-                  <label
-                    key={opt.value}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors",
-                      active ? "border-violet-500 bg-violet-50" : "border-slate-200 hover:border-slate-300",
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      name="role"
-                      checked={active}
-                      onChange={() => setSelectedRole(opt.value)}
-                      className="size-4 accent-violet-600"
-                    />
-                    <div>
-                      <div className="text-sm font-medium text-slate-800">{opt.label}</div>
-                      <div className="text-xs text-slate-500">{opt.desc}</div>
-                    </div>
-                  </label>
-                )
-              })}
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="outline" className="h-9" onClick={() => setRoleTarget(null)}>取消</Button>
-              <Button
-                className="h-9 bg-slate-900 text-white hover:bg-slate-800"
-                disabled={roleSaving || selectedRole === roleTarget.role}
-                onClick={confirmRoleChange}
-              >
-                {roleSaving ? "保存中..." : "确认修改"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <OptionDialog
+        open={!!roleTarget}
+        title={roleTarget ? <>修改角色 · <span className="font-normal text-slate-500">{roleTarget.nickname}</span></> : ""}
+        description="为该用户分配新的角色"
+        options={ROLE_OPTIONS}
+        value={selectedRole}
+        onChange={setSelectedRole}
+        onConfirm={confirmRoleChange}
+        onClose={() => setRoleTarget(null)}
+        confirmText="确认修改"
+        confirmDisabled={!roleTarget || selectedRole === roleTarget?.role}
+      />
     </div>
   )
 }

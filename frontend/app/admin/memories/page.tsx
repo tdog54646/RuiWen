@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog, type ConfirmState } from "@/components/admin/dialogs"
 import { useAuth } from "@/components/auth/auth-context"
 import { adminService } from "@/lib/api/admin"
 import { ApiError } from "@/lib/api/client"
@@ -25,6 +26,7 @@ export default function AdminMemoriesPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const size = 20
 
   const load = async () => {
@@ -141,7 +143,13 @@ export default function AdminMemoriesPage() {
                     variant="outline"
                     className="h-7 px-2 text-xs text-red-600"
                     disabled={busyId === m.id}
-                    onClick={() => { if (window.confirm("确认删除该记忆？")) run(m.id, () => adminService.deleteMemory(tokens!.accessToken, m.id)) }}
+                    onClick={() => setConfirm({
+                      title: "删除记忆",
+                      description: "确认删除该记忆条目？",
+                      danger: true,
+                      confirmText: "删除",
+                      onConfirm: () => run(m.id, () => adminService.deleteMemory(tokens!.accessToken, m.id)),
+                    })}
                   >
                     删除
                   </Button>
@@ -162,6 +170,9 @@ export default function AdminMemoriesPage() {
           </div>
         </div>
       )}
+
+      {/* 删除确认弹窗 */}
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   )
 }
