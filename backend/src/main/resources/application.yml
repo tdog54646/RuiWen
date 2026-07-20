@@ -140,6 +140,13 @@ auth:
     google:
       # Google OAuth Client ID，用于校验前端传来的 ID Token（audience）
       client-id: ${GOOGLE_CLIENT_ID:}
+      # Google JWKS 地址，默认官方；国内服务器若走自建反代可覆盖
+      jwks-uri: ${GOOGLE_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
+      proxy:
+        # 出墙代理（国内服务器拉 Google 公钥用）；host 为空则直连
+        host: ${GOOGLE_PROXY_HOST:}
+        port: ${GOOGLE_PROXY_PORT:0}
+        type: ${GOOGLE_PROXY_TYPE:HTTP}
 
 # ---------------------------------------------------------------------------
 # 后台管理：首个超级管理员引导。启动时若 identifier 对应用户存在则提升为 SUPER_ADMIN。

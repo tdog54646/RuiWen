@@ -82,5 +82,24 @@ public class AuthProperties {
     public static class Google {
         /** Google OAuth Client ID，用于校验 ID Token 的 audience。 */
         private String clientId;
+        /** Google JWKS 地址，默认官方；国内服务器可通过自建反代覆盖。 */
+        private String jwksUri = "https://www.googleapis.com/oauth2/v3/certs";
+        /** 出墙代理（国内服务器拉 Google 公钥用）；不配置则直连。 */
+        private final ProxyConfig proxy = new ProxyConfig();
+    }
+
+    /** HTTP/SOCKS 代理与超时配置。 */
+    @Data
+    public static class ProxyConfig {
+        /** 代理主机，留空则不走代理（直连）。 */
+        private String host;
+        /** 代理端口。 */
+        private int port;
+        /** 代理类型：HTTP（默认）或 SOCKS。 */
+        private String type = "HTTP";
+        /** 连接超时。 */
+        private Duration connectTimeout = Duration.ofSeconds(5);
+        /** 读取超时。 */
+        private Duration readTimeout = Duration.ofSeconds(10);
     }
 }
