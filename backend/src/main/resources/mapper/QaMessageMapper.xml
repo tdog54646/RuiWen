@@ -8,13 +8,17 @@
         <result property="userId" column="user_id"/>
         <result property="role" column="role"/>
         <result property="content" column="content"/>
+        <result property="imageUrls" column="image_urls"
+                typeHandler="com.tongji.qa.mapper.JsonStringListTypeHandler"/>
         <result property="status" column="status"/>
         <result property="createdAt" column="created_at"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.tongji.qa.model.QaMessage">
-        INSERT INTO qa_messages (id, conversation_id, user_id, role, content, status, created_at)
-        VALUES (#{id}, #{conversationId}, #{userId}, #{role}, #{content}, #{status}, #{createdAt})
+        INSERT INTO qa_messages (id, conversation_id, user_id, role, content, image_urls, status, created_at)
+        VALUES (#{id}, #{conversationId}, #{userId}, #{role}, #{content},
+                #{imageUrls, typeHandler=com.tongji.qa.mapper.JsonStringListTypeHandler},
+                #{status}, #{createdAt})
     </insert>
 
     <select id="findById" resultMap="QaMessageResultMap">

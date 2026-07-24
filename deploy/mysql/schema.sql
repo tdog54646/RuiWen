@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS qa_messages (
     user_id BIGINT UNSIGNED NOT NULL COMMENT '冗余字段，便于按用户聚合统计',
     role VARCHAR(16) NOT NULL COMMENT 'user / assistant',
     content MEDIUMTEXT NOT NULL,
+    image_urls JSON NULL COMMENT '用户提问附带的图片公网 URL 数组，仅 user 消息有值',
     status VARCHAR(16) NOT NULL DEFAULT 'completed' COMMENT 'streaming/completed/interrupted/error',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),

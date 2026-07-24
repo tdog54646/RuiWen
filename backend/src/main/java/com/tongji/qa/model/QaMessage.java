@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * 问答消息实体。
@@ -23,6 +24,8 @@ public class QaMessage {
     /** user / assistant */
     private String role;
     private String content;
+    /** 用户提问附带的图片公网 URL 数组（仅 user 消息；JSON 列，经 JsonStringListTypeHandler 存取） */
+    private List<String> imageUrls;
     /** streaming / completed / interrupted / error */
     private String status;
     private Instant createdAt;
