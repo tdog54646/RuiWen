@@ -10,6 +10,7 @@ import com.tongji.knowpost.id.SnowflakeIdGenerator;
 import com.tongji.llm.rag.RetrievalContext;
 import com.tongji.llm.rag.model.RetrievalChunk;
 import com.tongji.llm.rag.search.HybridSearchService;
+import com.tongji.llm.vision.ImageRecognitionService;
 import com.tongji.qa.api.dto.ConversationResponse;
 import com.tongji.qa.api.dto.MessageResponse;
 import com.tongji.qa.api.dto.QaChatRequest;
@@ -78,6 +79,7 @@ public class QaChatService {
     private final PostDraftService postDraftService;
     private final KnowPostService knowPostService;
     private final KnowPostMapper knowPostMapper;
+    private final ImageRecognitionService imageRecognitionService;
 
     // -------------------------------------------------------------------------
     // 多轮流式问答
@@ -112,12 +114,21 @@ public class QaChatService {
         int topK = (req.topK() != null && req.topK() > 0) ? req.topK() : properties.getChat().getDefaultTopK();
         int maxTokens = (req.maxTokens() != null && req.maxTokens() > 0) ? req.maxTokens() : properties.getChat().getDefaultMaxTokens();
 
-        // 2) 持久化用户提问
+        // 2) 持久化用户提问（含附带的图片 URL，落库以便历史回看）
         long userMessageId = idGen.nextId();
         Instant now = Instant.now();
+        // 过滤空值、去空白、至多 4 张
+        List<String> imageUrls = req.imageUrls() == null ? List.of()
+                : req.imageUrls().stream()
+                        .filter(s -> s != null && !s.isBlank())
+                        .map(String::trim)
+                        .limit(4)
+                        .toList();
+        boolean hasImage = !imageUrls.isEmpty();
         messageMapper.insert(QaMessage.builder()
                 .id(userMessageId).conversationId(conversationId).userId(userId)
-                .role("user").content(question).status("completed").createdAt(now).build());
+                .role("user").content(question).imageUrls(hasImage ? imageUrls : null)
+                .status("completed").createdAt(now).build());
 
         // 3) 历史窗口（最近 N 轮，排除刚插入的当轮 user，并反转为正序）
         int windowMsgs = properties.getHistoryWindow() * 2;
@@ -141,7 +152,16 @@ public class QaChatService {
         FunctionToolCallback publishTool = buildPublishPostTool(userId);
 
         // 6) 组装消息列表（不再预注入 RAG 上下文，由工具按需检索）
-        List<Message> messages = promptAssembler.assemble(question, List.of(), history, memories);
+        // 用户附带图片时：额外注册图片识别工具（QVQ），并在喂给 LLM 的文本中提示图片存在
+        String llmQuestion = hasImage
+                ? question + "\n\n[系统提示：用户本次附带了图片。如需了解图片内容，请调用 recognize_image 工具识别后再作答，不要声称无法查看图片。]"
+                : question;
+        List<Message> messages = promptAssembler.assemble(llmQuestion, List.of(), history, memories);
+
+        List<FunctionToolCallback> tools = new ArrayList<>(List.of(kbTool, draftTool, publishTool));
+        if (hasImage) {
+            tools.add(buildRecognizeImageTool(imageUrls, question));
+        }
 
         // 预生成 assistant 消息 ID（用于 meta 事件与异步落库）
         long assistantMessageId = idGen.nextId();
@@ -151,7 +171,7 @@ public class QaChatService {
         List<String> fragments = new ArrayList<>();
         Flux<ServerSentEvent<String>> llmEvents = chatClient.prompt()
                 .messages(messages)
-                .toolCallbacks(kbTool, draftTool, publishTool)
+                .toolCallbacks(tools.toArray(new FunctionToolCallback[0]))
                 .options(DeepSeekChatOptions.builder()
                         .model("deepseek-v4-flash")
                         .temperature(0.4)
@@ -381,6 +401,24 @@ public class QaChatService {
                 .build();
     }
 
+    /**
+     * 构建「图片识别」工具：用户本次附带图片时注册，调用 QVQ 视觉模型返回图片内容描述。
+     * <p>图片 URL 列表经闭包捕获（不让 LLM 复述 URL，避免传错）；LLM 可选传入 query 描述关注点，
+     * 缺省时用本次提问作为识别意图。识别失败在服务内部降级为提示串，不抛异常。
+     */
+    private FunctionToolCallback buildRecognizeImageTool(List<String> imageUrls, String question) {
+        return FunctionToolCallback.builder("recognize_image", (RecognizeImageInput in) -> {
+                    String focus = (in != null && in.query() != null && !in.query().isBlank())
+                            ? in.query() : question;
+                    return imageRecognitionService.recognize(imageUrls, focus);
+                })
+                .description("识别用户本次附带的图片（可能多张）并返回内容描述。仅当用户本次消息附带图片时调用；"
+                        + "query 可选，传入用户对图片的具体问题或关注点，缺省时整体描述图片。"
+                        + "获取描述后据其作答，不要声称无法查看图片。")
+                .inputType(RecognizeImageInput.class)
+                .build();
+    }
+
     /** 解析发布目标：优先用 LLM 传入的 postId（需归属本人且为 draft），否则回退到本人最近草稿。 */
     private Long resolvePublishTarget(long userId, String postIdStr) {
         if (postIdStr != null && !postIdStr.isBlank()) {
@@ -466,6 +504,9 @@ public class QaChatService {
 
     /** 工具入参：发布文章。postId 可选。 */
     private record PublishPostInput(@org.springframework.ai.tool.annotation.ToolParam(required = false) String postId) {}
+
+    /** 工具入参：图片识别。query 可选，用户对图片的关注点，缺省时整体描述。 */
+    private record RecognizeImageInput(@org.springframework.ai.tool.annotation.ToolParam(required = false) String query) {}
 
     /** 草稿摘要，经 SSE draft 事件下发前端。 */
     private record DraftPayload(String postId, String title, List<String> tags, String preview) {}
