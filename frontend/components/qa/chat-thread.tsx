@@ -41,7 +41,7 @@ export function ChatThread({
         ) : (
           <AnimatePresence initial={false}>
             {messages.map((m) => (
-              <MessageItem key={m.id} role={m.role} content={m.content} sources={m.sources} draft={m.draft} />
+              <MessageItem key={m.id} role={m.role} content={m.content} sources={m.sources} draft={m.draft} imageUrls={m.imageUrls} />
             ))}
             {(isStreaming || streamingContent) && (
               <MessageItem
@@ -111,24 +111,41 @@ function MessageItem({
   streaming,
   sources,
   draft,
+  imageUrls,
 }: {
   role: MessageRole
   content: string
   streaming?: boolean
   sources?: SourceArticle[]
   draft?: DraftPayload
+  imageUrls?: string[]
 }) {
   if (role === "user") {
+    const imgs = imageUrls && imageUrls.length > 0 ? imageUrls : undefined
     return (
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        className="flex justify-end"
+        className="flex flex-col items-end gap-1.5"
       >
-        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-gradient-to-br from-cyan-500 to-violet-500 px-4 py-2.5 text-sm leading-relaxed text-white shadow-md shadow-violet-500/20">
-          {content}
-        </div>
+        {imgs && (
+          <div className="flex max-w-[80%] flex-wrap justify-end gap-1.5">
+            {imgs.map((url, idx) => (
+              <img
+                key={url + idx}
+                src={url}
+                alt="附件"
+                className="max-h-52 rounded-2xl rounded-br-md object-cover shadow-md shadow-violet-500/20 ring-1 ring-white/30"
+              />
+            ))}
+          </div>
+        )}
+        {content && (
+          <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-gradient-to-br from-cyan-500 to-violet-500 px-4 py-2.5 text-sm leading-relaxed text-white shadow-md shadow-violet-500/20">
+            {content}
+          </div>
+        )}
       </motion.div>
     )
   }

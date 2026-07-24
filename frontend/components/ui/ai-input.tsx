@@ -1,6 +1,6 @@
 "use client"
 
-import { CornerRightUp, Loader2, Mic, Square } from "lucide-react"
+import { CornerRightUp, ImagePlus, Loader2, Mic, Square, X } from "lucide-react"
 import { useRef, useState } from "react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -13,13 +13,18 @@ interface AIInputProps {
   placeholder?: string
   minHeight?: number
   maxHeight?: number
-  onSubmit?: (value: string) => void
+  onSubmit?: (value: string, imageUrls?: string[]) => void
   /** 流式生成中：显示"停止"按钮替代"发送" */
   onStop?: () => void
   isStreaming?: boolean
   disabled?: boolean
   className?: string
+  /** 图片上传：父层负责上传到 OSS 并回传公网 URL；不传则不显示图片按钮。 */
+  onUploadImage?: (file: File) => Promise<string>
 }
+
+/** 单条消息最多附带图片数（与后端 / QVQ 成本约束一致）。 */
+const MAX_IMAGES = 4
 
 /**
  * AI 输入框：自适应高度的胶囊式输入，Enter 发送 / Shift+Enter 换行。
@@ -36,6 +41,7 @@ export function AIInput({
   isStreaming = false,
   disabled = false,
   className,
+  onUploadImage,
 }: AIInputProps) {
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight,
@@ -45,6 +51,12 @@ export function AIInput({
   // 录音起始时捕获已有文本，识别文本追加其后（不覆盖用户输入）
   const baseRef = useRef("")
 
+  // 图片附件：onUploadImage 由父层完成 OSS 上传并回传公网 URL
+  const [attachedImageUrls, setAttachedImageUrls] = useState<string[]>([])
+  const [imageUploading, setImageUploading] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const hasImage = Boolean(onUploadImage)
+
   const { status: voiceStatus, start: startVoice, stop: stopVoice } = useVoiceInput({
     onText: (text) => {
       setInputValue(baseRef.current + text)
@@ -53,26 +65,72 @@ export function AIInput({
     onError: (msg) => toast.error(msg),
   })
 
+  const handleSelectImage = async (file: File | null | undefined) => {
+    if (!file || !onUploadImage) return
+    if (attachedImageUrls.length >= MAX_IMAGES) {
+      toast.error(`最多附 ${MAX_IMAGES} 张图片`)
+      return
+    }
+    setImageUploading(true)
+    try {
+      const url = await onUploadImage(file)
+      setAttachedImageUrls((prev) => [...prev, url])
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "图片上传失败")
+    } finally {
+      setImageUploading(false)
+      if (imageInputRef.current) imageInputRef.current.value = ""
+    }
+  }
+
   const handleSubmit = () => {
     if (isStreaming || disabled) return
-    if (!inputValue.trim()) return
-    onSubmit?.(inputValue)
+    const text = inputValue.trim()
+    if (!text && attachedImageUrls.length === 0) return
+    onSubmit?.(inputValue, attachedImageUrls.length > 0 ? attachedImageUrls : undefined)
     setInputValue("")
+    setAttachedImageUrls([])
     adjustHeight(true)
   }
 
   // 有输入内容或正在生成时，展示发送/停止按钮；录音中隐藏发送按钮避免误触
   const voiceActive = voiceStatus === "connecting" || voiceStatus === "recording" || voiceStatus === "stopping"
-  const showAction = !voiceActive && (inputValue.trim().length > 0 || isStreaming)
+  const showAction = !voiceActive && (inputValue.trim().length > 0 || attachedImageUrls.length > 0 || isStreaming)
 
   return (
     <div className={cn("w-full py-4", className)}>
-      <div className="relative mx-auto w-full max-w-xl">
+      <div className="mx-auto w-full max-w-xl">
+        {/* 已附图片预览：用户右侧对齐，逐张 X 移除 */}
+        {attachedImageUrls.length > 0 && (
+          <div className="mb-2 flex flex-wrap justify-end gap-2">
+            {attachedImageUrls.map((url, idx) => (
+              <div key={url + idx} className="group relative">
+                <img
+                  src={url}
+                  alt="附件"
+                  className="size-16 rounded-lg object-cover ring-1 ring-black/10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setAttachedImageUrls((prev) => prev.filter((_, i) => i !== idx))}
+                  aria-label="移除图片"
+                  title="移除图片"
+                  className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur transition-opacity hover:bg-black/70"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="relative w-full">
         <Textarea
           id={id}
           placeholder={placeholder}
           className={cn(
-            "max-w-xl rounded-3xl px-4 py-4 pr-16",
+            "max-w-xl rounded-3xl py-4 pr-16",
+            hasImage ? "pl-10" : "pl-4",
             "bg-black/5 dark:bg-white/5",
             "text-wrap text-black dark:text-white",
             "placeholder:text-black/50 dark:placeholder:text-white/50",
@@ -99,6 +157,34 @@ export function AIInput({
               handleSubmit()
             }
           }}
+        />
+
+        {/* 图片上传按钮：点击触发文件选择；上传中转圈 */}
+        {hasImage && (
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={imageUploading || isStreaming || voiceActive}
+            aria-label="上传图片"
+            title="上传图片"
+            className={cn(
+              "absolute top-1/2 -translate-y-1/2 rounded-xl px-1 py-1 transition-all duration-200 disabled:opacity-40",
+              "left-3 bg-black/5 dark:bg-white/5",
+            )}
+          >
+            {imageUploading ? (
+              <Loader2 className="size-4 animate-spin text-black/70 dark:text-white/70" />
+            ) : (
+              <ImagePlus className="size-4 text-black/70 dark:text-white/70" />
+            )}
+          </button>
+        )}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => handleSelectImage(e.target.files?.[0])}
         />
 
         {/* 麦克风按钮：点击录音 → 实时流式识别文字逐字出现 → 再点停止。
@@ -150,7 +236,7 @@ export function AIInput({
         <button
           type="button"
           onClick={isStreaming ? onStop : handleSubmit}
-          disabled={disabled || (!isStreaming && !inputValue.trim())}
+          disabled={disabled || (!isStreaming && !inputValue.trim() && attachedImageUrls.length === 0)}
           aria-label={isStreaming ? "停止生成" : "发送"}
           className={cn(
             "absolute right-3 top-1/2 -translate-y-1/2 rounded-xl bg-black/5 px-1 py-1 transition-all duration-200 dark:bg-white/5",
@@ -165,6 +251,7 @@ export function AIInput({
             <CornerRightUp className="size-4 text-black/70 dark:text-white/70" />
           )}
         </button>
+        </div>
       </div>
     </div>
   )

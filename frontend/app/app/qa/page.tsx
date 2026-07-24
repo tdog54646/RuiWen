@@ -11,6 +11,7 @@ import { ChatThread } from "@/components/qa/chat-thread"
 import { ConversationList } from "@/components/qa/conversation-list"
 import { MemoryPanel } from "@/components/qa/memory-panel"
 import { qaChatService } from "@/lib/api/qa-chat"
+import { uploadChatImage } from "@/lib/api/storage"
 import type { Conversation, DraftPayload, QaMessage, SourceArticle } from "@/lib/types"
 
 const SUGGESTIONS = [
@@ -138,7 +139,7 @@ export default function QAPage() {
   }, [])
 
   const send = useCallback(
-    async (question: string) => {
+    async (question: string, imageUrls?: string[]) => {
       if (!user) {
         setError("请先登录")
         return
@@ -154,6 +155,7 @@ export default function QAPage() {
           content: question,
           status: "completed",
           createdAt: new Date().toISOString(),
+          imageUrls,
         },
       ])
       streamBuf.current = ""
@@ -169,6 +171,7 @@ export default function QAPage() {
       try {
         await qaChatService.streamChat({
           question,
+          imageUrls,
           conversationId: activeIdRef.current ?? undefined,
           scope,
           signal: controller.signal,
@@ -218,6 +221,11 @@ export default function QAPage() {
 
   const stop = useCallback(() => {
     abortRef.current?.abort()
+  }, [])
+
+  // 图片上传到 OSS（presign -> PUT -> 公网 URL），URL 随提问一起发给后端供 recognize_image 工具使用
+  const handleUploadImage = useCallback(async (file: File): Promise<string> => {
+    return uploadChatImage(file)
   }, [])
 
   if (!user) {
@@ -328,7 +336,12 @@ export default function QAPage() {
           />
 
           {/* 输入区 */}
-          <ChatInput onSend={send} onStop={stop} isStreaming={isStreaming} />
+          <ChatInput
+            onSend={send}
+            onStop={stop}
+            isStreaming={isStreaming}
+            onUploadImage={handleUploadImage}
+          />
         </GlassCard>
       </div>
 
