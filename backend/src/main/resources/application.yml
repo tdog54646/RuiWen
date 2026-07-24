@@ -6,7 +6,13 @@ server:
       min-spare: 100                    # 初始活跃线程
     max-connections: 10000              # 最大支持的 TCP 连接
     accept-count: 1000                  # 队列深度
+
 spring:
+  # 虚拟线程：Tomcat 请求线程、@Async、MVC 异步（SSE）等阻塞型任务改用虚拟线程，
+  # 配合下方 AsyncConfig 显式设置 MVC 异步 executor，消除 SimpleAsyncTaskExecutor 警告。
+  threads:
+    virtual:
+      enabled: true
   application:
     name: ruiwen-auth
   datasource:
