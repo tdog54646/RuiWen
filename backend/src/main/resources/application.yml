@@ -249,6 +249,18 @@ asr:
   ws-url: ${ASR_WS_URL:wss://dashscope.aliyuncs.com/api-ws/v1/inference/}
   model: ${ASR_MODEL:paraformer-realtime-v2}
 
+# ---------------------------------------------------------------------------
+# 图片识别（视觉模型）配置 -- 对应 VisionProperties
+# 默认接入阿里云百炼 QVQ 视觉推理模型（OpenAI 兼容、流式）。
+# api-key 默认回退到 OPENAI_API_KEY（同一 DashScope 账号即可调用 QVQ）。
+# ---------------------------------------------------------------------------
+vision:
+  api-key: ${DASHSCOPE_API_KEY:${OPENAI_API_KEY:}}
+  base-url: ${QVQ_BASE_URL:https://llm-ciuhew9j1jjrvz3f.cn-beijing.maas.aliyuncs.com/compatible-mode/v1}
+  model: ${QVQ_MODEL:qvq-plus}
+  max-tokens: 1024
+  timeout-seconds: 120
+
 # ── 知文导出 PDF ──────────────────────────────────────────────────────
 # 中文字体查找路径：按顺序取第一个存在的文件注册为 font-family。
 # 容器（Alpine font-noto-cjk）与本地开发（macOS）路径均已内置默认值，通常无需修改。
