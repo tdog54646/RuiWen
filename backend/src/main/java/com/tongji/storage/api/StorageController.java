@@ -6,6 +6,7 @@ import com.tongji.auth.token.JwtService;
 import com.tongji.knowpost.mapper.KnowPostMapper;
 import com.tongji.knowpost.model.KnowPost;
 import com.tongji.storage.OssStorageService;
+import com.tongji.storage.api.dto.ChatImagePresignRequest;
 import com.tongji.storage.api.dto.StoragePresignRequest;
 import com.tongji.storage.api.dto.StoragePresignResponse;
 import jakarta.validation.Valid;
@@ -72,6 +73,28 @@ public class StorageController {
         int expiresIn = 600; // 10 分钟
         String putUrl = ossStorageService.generatePresignedPutUrl(objectKey, request.contentType(), expiresIn);
         Map<String, String> headers = Map.of("Content-Type", request.contentType());
+        return new StoragePresignResponse(objectKey, putUrl, headers, expiresIn);
+    }
+
+    /**
+     * 聊天图片预签名直传：不依赖 postId，按用户+日期隔离。
+     * <p>对象键 {@code qa/images/{userId}/{yyyyMMdd}/{rand8}{ext}}；
+     * 公网 URL 由前端从 {@code putUrl} 去除签名串得到（与文章图片一致）。
+     */
+    @PostMapping("/presign-chat")
+    public StoragePresignResponse presignChat(@Valid @RequestBody ChatImagePresignRequest request,
+                                              @AuthenticationPrincipal Jwt jwt) {
+        long userId = jwtService.extractUserId(jwt);
+        String contentType = request.contentType();
+        String ext = normalizeExt(request.ext(), contentType, "knowpost_image"); // 复用图片扩展名推断
+
+        String date = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(ZoneId.of("UTC")).format(Instant.now());
+        String rand = UUID.randomUUID().toString().replaceAll("-", "").substring(0, 8);
+        String objectKey = "qa/images/" + userId + "/" + date + "/" + rand + ext;
+
+        int expiresIn = 600; // 10 分钟
+        String putUrl = ossStorageService.generatePresignedPutUrl(objectKey, contentType, expiresIn);
+        Map<String, String> headers = Map.of("Content-Type", contentType);
         return new StoragePresignResponse(objectKey, putUrl, headers, expiresIn);
     }
 
