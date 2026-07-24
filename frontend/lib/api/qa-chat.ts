@@ -13,6 +13,7 @@ const QA_PREFIX = "/api/qa"
 
 export type StreamChatParams = {
   question: string
+  imageUrls?: string[]
   conversationId?: string
   topK?: number
   maxTokens?: number
@@ -57,6 +58,7 @@ export const qaChatService = {
   // ---- 流式问答 ----
   streamChat: async ({
     question,
+    imageUrls,
     conversationId,
     topK,
     maxTokens,
@@ -67,7 +69,7 @@ export const qaChatService = {
     const response = await apiFetchResponse(`${QA_PREFIX}/chat`, {
       method: "POST",
       headers: { Accept: "text/event-stream" },
-      body: { question, conversationId, topK, maxTokens, scope: scope ?? "all" },
+      body: { question, imageUrls, conversationId, topK, maxTokens, scope: scope ?? "all" },
       signal,
     })
 

@@ -34,6 +34,8 @@ export type QaMessage = {
   createdAt: string
   sources?: SourceArticle[]
   draft?: DraftPayload
+  /** 用户当轮附带的图片公网 URL 数组（user 消息；落库后历史回看也含此字段）。 */
+  imageUrls?: string[]
 }
 
 export type MemorySource = "auto" | "manual"
@@ -93,6 +95,7 @@ export type QaStreamEvent =
 export type QaChatRequest = {
   conversationId?: string
   question: string
+  imageUrls?: string[]
   topK?: number
   maxTokens?: number
 }
