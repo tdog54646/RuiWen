@@ -25,13 +25,13 @@ export function ChatThread({
   onSuggestion?: (text: string) => void
 }) {
   const endRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, streamingContent, isStreaming])
-
   const showEmpty =
     messages.length === 0 && !isStreaming && !streamingContent
+
+  useEffect(() => {
+    if (showEmpty) return
+    endRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, streamingContent, isStreaming, showEmpty])
 
   return (
     <div className={cn("overflow-y-auto px-4 py-6 md:px-8", className)}>
@@ -66,37 +66,34 @@ function EmptyState({
   onSuggestion?: (text: string) => void
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-14 text-center">
+    <div className="flex flex-col items-center justify-center py-7 text-center">
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: "spring", stiffness: 300, damping: 24 }}
-        className="relative mb-6"
+        className="mb-4"
       >
-        <div className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/40 to-violet-500/40 blur-2xl" />
-        <div className="relative flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 shadow-lg shadow-violet-500/30">
-          <Sparkles className="size-7 text-white" />
-        </div>
+        <Sparkles className="size-7 text-[#2f5d50]" strokeWidth={1.5} />
       </motion.div>
 
-      <h3 className="text-gradient text-2xl font-bold tracking-tight">
+      <h3 className="font-display text-3xl font-medium tracking-[-0.04em] text-[#1d211f]">
         向知识库提问
       </h3>
-      <p className="mt-2 text-sm text-slate-400">
+      <p className="mt-2 text-sm text-[#7a7e79]">
         支持多轮追问，AI 会记住上下文与你
       </p>
 
       {suggestions && suggestions.length > 0 && (
-        <div className="mt-8 grid w-full max-w-lg gap-2">
+        <div className="mt-6 grid w-full max-w-2xl gap-3 sm:grid-cols-3">
           {suggestions.map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => onSuggestion?.(s)}
-              className="group flex items-center justify-between gap-3 rounded-xl border border-white/60 bg-white/40 px-4 py-3 text-left text-sm text-slate-600 backdrop-blur-md transition-all hover:border-cyan-400/40 hover:bg-white/70 hover:shadow-md hover:text-slate-800"
+              className="group flex min-h-24 w-full flex-col items-start justify-between gap-3 rounded-xl bg-[#efefe9] p-4 text-left text-sm font-medium text-[#505650] transition-transform hover:-translate-y-1 hover:text-[#1d211f]"
             >
               <span>{s}</span>
-              <ArrowRight className="size-4 shrink-0 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-cyan-500" />
+              <ArrowRight className="size-4 shrink-0 self-end text-[#64736b] transition-all group-hover:translate-x-0.5 group-hover:text-[#2f5d50]" />
             </button>
           ))}
         </div>
@@ -136,13 +133,13 @@ function MessageItem({
                 key={url + idx}
                 src={url}
                 alt="附件"
-                className="max-h-52 rounded-2xl rounded-br-md object-cover shadow-md shadow-violet-500/20 ring-1 ring-white/30"
+                className="max-h-52 rounded-lg object-cover ring-1 ring-[#d8d9d2]"
               />
             ))}
           </div>
         )}
         {content && (
-          <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-gradient-to-br from-cyan-500 to-violet-500 px-4 py-2.5 text-sm leading-relaxed text-white shadow-md shadow-violet-500/20">
+          <div className="max-w-[80%] whitespace-pre-wrap border-r-2 border-[#2f5d50] bg-[#e7eee9] px-4 py-3 text-sm leading-relaxed text-[#29443b]">
             {content}
           </div>
         )}
@@ -158,17 +155,15 @@ function MessageItem({
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
       className="flex gap-3"
     >
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600 ring-1 ring-white/50">
-        <Bot className="size-4" />
-      </div>
-      <div className="min-w-0 flex-1 pt-0.5 text-slate-700">
+      <Bot className="mt-0.5 size-5 shrink-0 text-[#2f5d50]" strokeWidth={1.6} />
+      <div className="min-w-0 flex-1 pt-0.5 text-[#4e544f]">
         {content ? (
           <MarkdownRenderer content={content} className="prose-sm max-w-none" />
         ) : (
           <span className="text-sm text-slate-400">思考中…</span>
         )}
         {streaming && (
-          <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse rounded-full bg-violet-500 align-middle" />
+          <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-[#2f5d50] align-middle" />
         )}
         {sources && sources.length > 0 && <Recommendations sources={sources} />}
         {draft && <DraftCard draft={draft} />}
@@ -180,9 +175,9 @@ function MessageItem({
 /** 回答下方「为您推荐」：命中知识库的文章，点击跳转详情页。 */
 function Recommendations({ sources }: { sources: SourceArticle[] }) {
   return (
-    <div className="mt-3 rounded-xl border border-white/60 bg-white/40 p-3 backdrop-blur-md">
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-        <Sparkles className="size-3.5 text-violet-500" />
+    <div className="mt-4 rounded-xl bg-[#efefe9] p-4">
+      <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[#626762]">
+        <Sparkles className="size-3.5 text-[#2f5d50]" />
         为您推荐
       </div>
       <ol className="space-y-1.5">
@@ -190,9 +185,9 @@ function Recommendations({ sources }: { sources: SourceArticle[] }) {
           <li key={s.postId}>
             <Link
               href={`/app/posts/${s.postId}`}
-              className="group flex items-start gap-2 text-sm text-slate-600 transition-colors hover:text-violet-600"
+              className="group flex items-start gap-2 text-sm text-[#626762] transition-colors hover:text-[#2f5d50]"
             >
-              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded bg-violet-100 text-[11px] font-medium text-violet-600">
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center border border-[#aeb5af] text-[10px] font-medium text-[#2f5d50]">
                 {i + 1}
               </span>
               <span className="underline-offset-2 group-hover:underline">

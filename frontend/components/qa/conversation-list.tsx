@@ -34,15 +34,15 @@ export function ConversationList({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-white/40 px-4 py-3.5">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+      <div className="flex items-center justify-between px-4 py-4">
+        <span className="text-sm font-semibold text-[#31443b]">
           会话
         </span>
         <Button
           size="xs"
           variant="ghost"
           onClick={onCreate}
-          className="gap-1 text-slate-500 hover:text-slate-800"
+          className="gap-1 rounded-md text-[#69706b] hover:text-[#1d211f]"
         >
           <Plus className="size-3.5" />
           新建
@@ -53,7 +53,7 @@ export function ConversationList({
         {loading ? (
           <EmptyState loading />
         ) : conversations.length === 0 ? (
-          <div className="px-2 py-10 text-center text-xs text-slate-400">
+          <div className="px-2 py-10 text-center text-xs text-[#858984]">
             点击「新建」开始第一个会话
           </div>
         ) : (
@@ -64,23 +64,19 @@ export function ConversationList({
               <div
                 key={c.id}
                 className={cn(
-                  "group relative flex items-center gap-1 rounded-xl px-2.5 py-2 text-sm transition-all",
+                  "group relative flex items-center gap-1 rounded-lg px-3 py-2.5 text-sm transition-colors",
                   active
-                    ? "bg-gradient-to-r from-cyan-500/10 to-violet-500/10 text-slate-800 ring-1 ring-white/60 backdrop-blur-md"
-                    : "cursor-pointer text-slate-500 hover:bg-white/50 hover:text-slate-700",
+                    ? "bg-[#deded8] text-[#252a27]"
+                    : "cursor-pointer text-[#5f645f] hover:bg-[#e5e5df] hover:text-[#252a27]",
                 )}
               >
-                {active && (
-                  <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan-400 to-violet-500" />
-                )}
-
                 {editing ? (
                   <>
                     <input
                       autoFocus
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
-                      className="h-6 flex-1 rounded bg-white/80 px-1.5 text-xs text-slate-700 outline-none ring-1 ring-cyan-400/50"
+                      className="h-7 flex-1 rounded-md border border-[#aeb5af] bg-[#fbfbf8] px-1.5 text-xs text-[#343936] outline-none focus:border-[#2f5d50]"
                       onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
                         if (e.key === "Enter") commitRename(c.id, c.title)
                         if (e.key === "Escape") setEditingId(null)
@@ -110,7 +106,7 @@ export function ConversationList({
                       <MessageSquare
                         className={cn(
                           "size-3.5 shrink-0",
-                          active ? "text-violet-500" : "text-slate-400",
+                          active ? "text-[#2f5d50]" : "text-[#7b807b]",
                         )}
                       />
                       <span className="truncate">{c.title}</span>

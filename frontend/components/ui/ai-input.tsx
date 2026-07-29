@@ -27,7 +27,7 @@ interface AIInputProps {
 const MAX_IMAGES = 4
 
 /**
- * AI 输入框：自适应高度的胶囊式输入，Enter 发送 / Shift+Enter 换行。
+ * AI 输入框：自适应高度输入，Enter 发送 / Shift+Enter 换行。
  * 流式生成中（isStreaming）右侧按钮切换为"停止"。
  * 麦克风按钮：点击录音 → 再点停止 → 调用 ASR → 识别文本追加到输入框。
  */
@@ -129,14 +129,14 @@ export function AIInput({
           id={id}
           placeholder={placeholder}
           className={cn(
-            "max-w-xl rounded-3xl py-4 pr-16",
+            "max-w-xl rounded-lg border border-[#cfd1ca] py-4 pr-16",
             hasImage ? "pl-10" : "pl-4",
-            "bg-black/5 dark:bg-white/5",
-            "text-wrap text-black dark:text-white",
-            "placeholder:text-black/50 dark:placeholder:text-white/50",
-            "border-none ring-black/20 dark:ring-white/20",
+            "bg-[#f3f3ee] dark:bg-white/5",
+            "text-wrap text-[#252a27] dark:text-white",
+            "placeholder:text-[#8d918c] dark:placeholder:text-white/50",
+            "ring-[#2f5d50]/15 dark:ring-white/20",
             "resize-none overflow-y-auto",
-            "focus-visible:ring-0 focus-visible:ring-offset-0",
+            "focus-visible:border-[#2f5d50] focus-visible:ring-2 focus-visible:ring-[#2f5d50]/10 focus-visible:ring-offset-0",
             "transition-[height] duration-100 ease-out",
             "[&::-webkit-resizer]:hidden",
           )}

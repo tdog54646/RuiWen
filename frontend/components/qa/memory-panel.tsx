@@ -10,7 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { EmptyState, StatusChip, Toggle } from "@/components/ui/studio"
+import { EmptyState, Toggle } from "@/components/ui/studio"
 import { qaChatService } from "@/lib/api/qa-chat"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -122,7 +122,7 @@ export function MemoryPanel({
         <SheetHeader>
           <div className="flex items-center justify-between pr-8">
             <SheetTitle className="flex items-center gap-2">
-              <Brain className="size-4 text-violet-500" />
+              <Brain className="size-4 text-[#2f5d50]" />
               用户记忆
             </SheetTitle>
             <Button
@@ -153,14 +153,14 @@ export function MemoryPanel({
           ) : (
             Object.entries(groups).map(([cat, items]) => (
               <div key={cat} className="space-y-2">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                <div className="text-sm font-semibold text-[#555a56]">
                   {cat}
                 </div>
                 {items.map((m) => (
                   <div
                     key={m.id}
                     className={cn(
-                      "rounded-xl border border-white/60 bg-white/50 p-3 backdrop-blur-md",
+                      "rounded-xl bg-[#efefe9] p-3",
                       !m.enabled && "opacity-50",
                     )}
                   >
@@ -171,7 +171,7 @@ export function MemoryPanel({
                           value={editDraft}
                           onChange={(e) => setEditDraft(e.target.value)}
                           rows={2}
-                          className="w-full resize-none rounded-lg bg-white/80 p-2 text-sm outline-none ring-1 ring-cyan-400/50"
+                          className="w-full resize-none rounded-lg border border-[#cfd1ca] bg-[#fbfbf8] p-2 text-sm outline-none focus:border-[#2f5d50]"
                         />
                         <div className="flex justify-end gap-1">
                           <Button
@@ -197,9 +197,9 @@ export function MemoryPanel({
                       <div className="flex items-start gap-2">
                         <div className="flex-1 text-sm text-slate-700">{m.content}</div>
                         <div className="flex shrink-0 items-center gap-1">
-                          <StatusChip tone={m.source === "auto" ? "cyan" : "violet"}>
+                          <span className="text-sm text-[#777b76]">
                             {m.source === "auto" ? "自动" : "手动"}
-                          </StatusChip>
+                          </span>
                           <Toggle checked={m.enabled} onChange={() => toggleEnabled(m)} />
                           <Button
                             size="icon-xs"
@@ -230,13 +230,13 @@ export function MemoryPanel({
           )}
         </div>
 
-        <div className="border-t border-white/50 p-3">
+        <div className="bg-[#efefe9] p-3">
           <div className="flex gap-2">
             <input
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               placeholder="分类"
-              className="h-8 w-24 rounded-lg border border-white/60 bg-white/50 px-2 text-xs outline-none focus:border-cyan-400/60"
+              className="h-9 w-24 rounded-lg border border-[#cfd1ca] bg-[#fbfbf8] px-2 text-sm outline-none focus:border-[#2f5d50]"
             />
             <input
               value={newContent}
@@ -245,7 +245,7 @@ export function MemoryPanel({
                 if (e.key === "Enter") add()
               }}
               placeholder="新增一条记忆…"
-              className="h-8 flex-1 rounded-lg border border-white/60 bg-white/50 px-2 text-sm outline-none focus:border-cyan-400/60"
+              className="h-9 flex-1 rounded-lg border border-[#cfd1ca] bg-[#fbfbf8] px-2 text-sm outline-none focus:border-[#2f5d50]"
             />
             <Button size="icon" onClick={add} disabled={!newContent.trim()}>
               <Plus className="size-4" />

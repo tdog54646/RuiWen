@@ -30,7 +30,7 @@ export function ChatInput({
       minHeight={52}
       maxHeight={200}
       onUploadImage={onUploadImage}
-      className="border-t border-white/50 bg-white/40 py-3 backdrop-blur-md"
+      className="bg-[#fbfbf8] py-3"
     />
   )
 }

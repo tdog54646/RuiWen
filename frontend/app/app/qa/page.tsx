@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Brain, Plus, Sparkles } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
 import { Button } from "@/components/ui/button"
-import { GlassCard, MessageBanner, StudioShell } from "@/components/ui/studio"
+import { MessageBanner, StudioShell } from "@/components/ui/studio"
 import { ChatInput } from "@/components/qa/chat-input"
 import { ChatThread } from "@/components/qa/chat-thread"
 import { ConversationList } from "@/components/qa/conversation-list"
@@ -231,24 +231,22 @@ export default function QAPage() {
   if (!user) {
     return (
       <StudioShell centered>
-        <GlassCard className="max-w-md">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 ring-1 ring-white/50">
-              <Sparkles className="size-6 text-violet-500" />
-            </div>
+        <section className="w-full max-w-xl rounded-2xl bg-[#fbfbf8] px-8 py-14 text-center shadow-[0_20px_50px_-42px_rgba(29,33,31,0.55)] ring-1 ring-[#deded8]">
+          <div className="flex flex-col items-center gap-5">
+            <Sparkles className="size-7 text-[#2f5d50]" strokeWidth={1.5} />
             <div>
-              <h2 className="text-lg font-semibold text-slate-800">
+              <h2 className="font-display text-4xl font-medium tracking-[-0.045em] text-[#1d211f]">
                 登录后开启 AI 问答
               </h2>
-              <p className="mt-1 text-sm text-slate-400">
-                多轮追问、用户记忆，知识库随身问答
+              <p className="mt-3 text-sm leading-6 text-[#747873]">
+                通过多轮追问和个人记忆，从知识库中获得有出处的回答。
               </p>
             </div>
             <Link href="/login?next=/app/qa">
-              <Button>去登录</Button>
+              <Button className="rounded-lg bg-[#1d211f] px-6 hover:bg-[#2f5d50]">去登录</Button>
             </Link>
           </div>
-        </GlassCard>
+        </section>
       </StudioShell>
     )
   }
@@ -259,10 +257,9 @@ export default function QAPage() {
         {error}
       </MessageBanner>
 
-      <div className="flex h-[calc(100dvh-7.5rem)] gap-4">
+      <div className="flex h-[calc(100dvh-8rem)] overflow-hidden rounded-2xl bg-[#fbfbf8] shadow-[0_24px_60px_-45px_rgba(29,33,31,0.6)] ring-1 ring-[#deded8]">
         {/* 左：会话列表（桌面端） */}
-        <aside className="hidden w-64 shrink-0 md:block">
-          <GlassCard className="h-full overflow-hidden p-0" contentClassName="h-full">
+        <aside className="hidden w-72 shrink-0 bg-[#efefe9] md:block">
             <ConversationList
               conversations={conversations}
               activeId={activeId}
@@ -272,23 +269,17 @@ export default function QAPage() {
               onRename={renameConversation}
               onDelete={deleteConversation}
             />
-          </GlassCard>
         </aside>
 
         {/* 右：聊天主区 */}
-        <GlassCard
-          className="h-full min-h-0 flex-1 overflow-hidden p-0"
-          contentClassName="flex h-full min-h-0 flex-col"
-        >
+        <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           {/* 顶部工具栏 */}
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/40 px-4 py-3 md:px-6">
+          <div className="flex shrink-0 items-center justify-between gap-3 bg-[#fbfbf8] px-4 py-3.5 md:px-6">
             <div className="flex items-center gap-2.5">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-violet-500/20 ring-1 ring-white/50">
-                <Sparkles className="size-4 text-violet-500" />
-              </div>
+              <Sparkles className="size-5 text-[#2f5d50]" strokeWidth={1.6} />
               <div className="leading-tight">
-                <div className="text-sm font-semibold text-slate-800">AI 问答</div>
-                <div className="text-[11px] text-slate-400">知识库 · 多轮记忆</div>
+                <div className="font-display text-lg font-medium tracking-[-0.025em] text-[#252a27]">AI 问答</div>
+                <div className="text-sm text-[#777b76]">知识库与多轮记忆</div>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
@@ -296,7 +287,7 @@ export default function QAPage() {
                 variant={scope === "private" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setScope((s) => (s === "private" ? "all" : "private"))}
-                className="gap-1"
+                className="gap-1 rounded-md border-[#cfd1ca] bg-transparent text-[#4f5550] hover:bg-[#ecece6]"
                 title={scope === "private" ? "当前：仅我的私有库，点击切到全部知识" : "当前：全部知识，点击切到仅我的私有库"}
               >
                 <Sparkles className="size-3.5" />
@@ -307,7 +298,7 @@ export default function QAPage() {
                 variant="ghost"
                 size="sm"
                 onClick={createConversation}
-                className="gap-1 md:hidden"
+                className="gap-1 rounded-md text-[#4f5550] md:hidden"
               >
                 <Plus className="size-4" />
                 新建
@@ -316,7 +307,7 @@ export default function QAPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => setMemOpen(true)}
-                className="gap-1"
+                className="gap-1 rounded-md border-[#cfd1ca] bg-transparent text-[#4f5550] hover:bg-[#ecece6]"
               >
                 <Brain className="size-3.5" />
                 <span className="hidden sm:inline">用户记忆</span>
@@ -342,7 +333,7 @@ export default function QAPage() {
             isStreaming={isStreaming}
             onUploadImage={handleUploadImage}
           />
-        </GlassCard>
+        </section>
       </div>
 
       <MemoryPanel open={memOpen} onOpenChange={setMemOpen} />

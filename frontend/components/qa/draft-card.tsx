@@ -10,12 +10,12 @@ import type { DraftPayload } from "@/lib/types"
  */
 export function DraftCard({ draft }: { draft: DraftPayload }) {
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-white/60 bg-white/50 backdrop-blur-md">
-      <div className="flex items-center gap-1.5 border-b border-white/50 bg-white/40 px-3 py-2 text-xs font-semibold text-slate-500">
-        <FileText className="size-3.5 text-violet-500" />
+    <div className="mt-4 overflow-hidden rounded-xl bg-[#efefe9] p-4">
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-[#626762]">
+        <FileText className="size-3.5 text-[#2f5d50]" />
         文章草稿 · 待确认
       </div>
-      <div className="space-y-2 px-3 py-3">
+      <div className="mt-3 space-y-3">
         <div className="text-sm font-semibold text-slate-800">
           {draft.title || "未命名文章"}
         </div>
@@ -24,7 +24,7 @@ export function DraftCard({ draft }: { draft: DraftPayload }) {
             {draft.tags.map((t, i) => (
               <span
                 key={`${t}-${i}`}
-                className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-600"
+                className="inline-flex items-center gap-1 rounded-md bg-[#e2e2dc] px-2 py-1 text-sm font-medium text-[#536a60]"
               >
                 <Tag className="size-2.5" />
                 {t}
@@ -33,11 +33,11 @@ export function DraftCard({ draft }: { draft: DraftPayload }) {
           </div>
         )}
         {draft.preview && (
-          <div className="max-h-48 overflow-y-auto rounded-lg bg-white/40 px-3 py-2 text-sm text-slate-600">
+          <div className="max-h-48 overflow-y-auto rounded-lg bg-[#fbfbf8] px-3 py-2 text-sm text-[#626762]">
             <MarkdownRenderer content={draft.preview} className="prose-sm max-w-none" />
           </div>
         )}
-        <div className="rounded-lg bg-cyan-50/70 px-3 py-2 text-xs text-slate-500">
+        <div className="rounded-lg bg-[#e7eee9] px-3 py-2 text-sm text-[#59615c]">
           确认无误请回复「发布」即可发布；需要修改请直接说明（如改标题、调整内容）。
         </div>
       </div>
