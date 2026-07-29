@@ -115,7 +115,7 @@ export function ConfirmDialog({
       onClose={guardedClose}
       icon={
         state?.danger ? (
-          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-red-100 text-red-600">
             <AlertTriangle className="size-5" />
           </span>
         ) : undefined

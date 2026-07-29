@@ -51,24 +51,27 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   if (isLoading || !user || !isAdminRole(user.role)) {
     return (
-      <div className="flex min-h-dvh items-center justify-center text-sm text-slate-400">
+      <div className="app-canvas flex min-h-dvh items-center justify-center text-sm text-[#7a7e79]">
         正在校验管理员身份...
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-dvh bg-slate-50 text-slate-800">
+    <div className="admin-canvas flex min-h-dvh flex-col bg-[#f3f3ef] text-[#252a27] lg:flex-row">
       {/* 侧边栏 */}
-      <aside className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
-        <div className="flex items-center gap-2 px-5 py-5">
+      <aside className="sticky top-0 z-40 flex w-full shrink-0 flex-col bg-[#f8f8f4]/95 backdrop-blur-xl lg:h-dvh lg:w-64 lg:border-r lg:border-[#d8d9d2] lg:backdrop-blur-none">
+        <div className="flex h-[4.5rem] items-center gap-2.5 px-5 lg:h-auto lg:py-6">
           <LineLogo variant="mark" className="size-8 shrink-0" priority />
-          <div className="leading-tight">
-            <p className="text-sm font-semibold">Line</p>
-            <p className="text-[11px] text-slate-400">后台管理</p>
-          </div>
+          <p className="font-display text-base font-semibold tracking-[-0.035em]">Line</p>
+          <Link
+            href="/app"
+            className="ml-auto text-xs font-medium text-[#69706b] hover:text-[#2f5d50] lg:hidden"
+          >
+            返回主站
+          </Link>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 px-3 py-2">
+        <nav className="no-scrollbar flex flex-row gap-1 overflow-x-auto px-3 pb-3 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:py-3">
           {navItems.map(({ href, label, icon: Icon }) => {
             const isActive = href === "/admin" ? pathname === "/admin" : pathname.startsWith(href)
             return (
@@ -76,10 +79,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 key={href}
                 href={href}
                 className={cn(
-                  "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  "flex shrink-0 items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors lg:border-l-2 lg:border-transparent",
                   isActive
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                    ? "border-[#2f5d50] bg-[#e7eee9] text-[#23483e]"
+                    : "text-[#69706b] hover:bg-[#ecece6] hover:text-[#1d211f]",
                 )}
               >
                 <Icon className="size-4" />
@@ -88,10 +91,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             )
           })}
         </nav>
-        <div className="flex flex-col gap-1 border-t border-slate-200 px-3 py-3">
+        <div className="hidden flex-col gap-1 px-3 py-4 lg:flex">
           <Link
             href="/app"
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            className="flex items-center gap-2 border-l-2 border-transparent px-3 py-2 text-sm text-[#69706b] hover:border-[#2f5d50] hover:bg-[#ecece6] hover:text-[#1d211f]"
           >
             <ArrowLeft className="size-4" />
             返回主站
@@ -102,7 +105,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               await logout()
               router.push("/login")
             }}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            className="flex items-center gap-2 border-l-2 border-transparent px-3 py-2 text-left text-sm text-[#69706b] hover:border-[#2f5d50] hover:bg-[#ecece6] hover:text-[#1d211f]"
           >
             <LogOut className="size-4" />
             退出登录
@@ -111,8 +114,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* 主内容 */}
-      <main className="flex-1 overflow-x-hidden">
-        <div className="mx-auto w-full max-w-6xl px-6 py-8">{children}</div>
+      <main className="min-w-0 flex-1 overflow-x-hidden">
+        <div className="mx-auto w-full max-w-[1440px] px-4 py-7 sm:px-6 lg:px-10 lg:py-10">{children}</div>
       </main>
     </div>
   )
