@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Eye, EyeOff } from "lucide-react"
-import { LineLogo } from "@/components/brand/line-logo"
 import { authService } from "@/lib/api/auth"
 import { ApiError } from "@/lib/api/client"
 import {
@@ -102,19 +101,18 @@ function ResetPasswordPage({ onResetSuccess }: ResetPasswordPageProps) {
 
   return (
     <AuthShell>
-      <div className="mb-8 flex flex-col items-center text-center">
-        <LineLogo className="w-44" priority />
-        <h1 className="text-gradient mt-3 text-2xl font-bold tracking-tight">
+      <div className="mb-10">
+        <h1 className="font-display text-4xl font-medium tracking-[-0.05em] text-[#1d211f]">
           重置密码
         </h1>
-        <p className="mt-1.5 text-sm text-slate-500">
+        <p className="mt-3 text-sm leading-6 text-[#747873]">
           输入邮箱/手机号与验证码重置你的密码
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="identifier" className="text-xs text-slate-500">
+          <Label htmlFor="identifier" className="text-sm font-semibold text-[#626762]">
             邮箱 / 手机号
           </Label>
           <Input
@@ -130,7 +128,7 @@ function ResetPasswordPage({ onResetSuccess }: ResetPasswordPageProps) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="code" className="text-xs text-slate-500">
+          <Label htmlFor="code" className="text-sm font-semibold text-[#626762]">
             验证码
           </Label>
           <div className="flex gap-2">
@@ -146,18 +144,18 @@ function ResetPasswordPage({ onResetSuccess }: ResetPasswordPageProps) {
             <Button
               type="button"
               variant="outline"
-              className="h-12 shrink-0 border-white/60 bg-white/60 backdrop-blur-md"
+              className="h-12 shrink-0 rounded-lg border-[#cfd1ca] bg-transparent hover:bg-[#ecece6]"
               disabled={sendingCode || countdown > 0}
               onClick={handleSendCode}
             >
               {countdown > 0 ? `${countdown}s` : "获取验证码"}
             </Button>
           </div>
-          <p className="text-xs text-slate-400">验证码用于校验身份，有效期有限。</p>
+          <p className="text-sm text-[#858984]">验证码用于校验身份，有效期有限。</p>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="newPassword" className="text-xs text-slate-500">
+          <Label htmlFor="newPassword" className="text-sm font-semibold text-[#626762]">
             新密码
           </Label>
           <div className="relative">
@@ -174,7 +172,7 @@ function ResetPasswordPage({ onResetSuccess }: ResetPasswordPageProps) {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#858984] transition-colors hover:text-[#2f5d50]"
             >
               {showPassword ? (
                 <EyeOff className="size-5" />
@@ -186,7 +184,7 @@ function ResetPasswordPage({ onResetSuccess }: ResetPasswordPageProps) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="confirmPassword" className="text-xs text-slate-500">
+          <Label htmlFor="confirmPassword" className="text-sm font-semibold text-[#626762]">
             再次输入密码
           </Label>
           <Input
@@ -216,26 +214,22 @@ function ResetPasswordPage({ onResetSuccess }: ResetPasswordPageProps) {
           disabled={
             isLoading || !identifier || !code || !newPassword || !confirmPassword
           }
-          className="h-12 w-full bg-gradient-to-r from-cyan-500 to-violet-600 text-base font-medium text-white shadow-lg shadow-violet-500/25"
+          className="h-12 w-full rounded-lg bg-[#1d211f] text-base font-semibold text-white shadow-[0_14px_30px_-20px_rgba(29,33,31,0.8)] hover:bg-[#2f5d50]"
         >
           {isLoading ? "重置中..." : "重置密码"}
         </Button>
       </form>
 
-      <div className="mt-8 text-center text-sm text-slate-500">
+      <div className="mt-8 text-center text-sm text-[#747873]">
         想起密码了？{" "}
         <Link
           href="/login"
-          className="font-medium text-violet-600 hover:text-violet-700"
+          className="font-semibold text-[#2f5d50] hover:text-[#1d211f]"
         >
           返回登录
         </Link>
       </div>
 
-      <div className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
-        <LineLogo variant="mark" className="size-4" />
-        Line · 知识分享平台
-      </div>
     </AuthShell>
   )
 }

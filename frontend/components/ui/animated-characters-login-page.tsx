@@ -9,7 +9,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ArrowLeft, Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
 import { GoogleLoginButton } from "@/components/auth/google-login-button"
-import { LineLogo } from "@/components/brand/line-logo"
 import { ApiError } from "@/lib/api/client"
 import {
   AuthShell,
@@ -64,20 +63,18 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   return (
     <AuthShell>
-      {/* 品牌 */}
-      <div className="mb-8 flex flex-col items-center text-center">
-        <LineLogo className="w-44" priority />
-        <h1 className="text-gradient mt-3 text-2xl font-bold tracking-tight">
+      <div className="mb-10">
+        <h1 className="font-display text-4xl font-medium tracking-[-0.05em] text-[#1d211f]">
           欢迎回来
         </h1>
-        <p className="mt-1.5 text-sm text-slate-500">
+        <p className="mt-3 text-sm leading-6 text-[#747873]">
           请输入你的账号信息登录
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="identifier" className="text-xs text-slate-500">
+          <Label htmlFor="identifier" className="text-sm font-semibold text-[#626762]">
             邮箱 / 手机号
           </Label>
           <Input
@@ -93,7 +90,7 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="password" className="text-xs text-slate-500">
+          <Label htmlFor="password" className="text-sm font-semibold text-[#626762]">
             密码
           </Label>
           <div className="relative">
@@ -109,7 +106,7 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#858984] transition-colors hover:text-[#2f5d50] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]"
             >
               {showPassword ? (
                 <EyeOff className="size-5" />
@@ -125,14 +122,14 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
             <Checkbox id="remember" />
             <Label
               htmlFor="remember"
-              className="cursor-pointer text-sm font-normal text-slate-600"
+              className="cursor-pointer text-sm font-normal text-[#626762]"
             >
               记住登录 30 天
             </Label>
           </div>
           <Link
             href="/reset-password"
-            className="text-sm font-medium text-violet-600 hover:text-violet-700"
+            className="text-sm font-semibold text-[#2f5d50] underline decoration-[#9bad9f] underline-offset-4 hover:text-[#1d211f]"
           >
             忘记密码？
           </Link>
@@ -148,25 +145,25 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
           type="submit"
           size="lg"
           disabled={isLoading}
-          className="h-12 w-full bg-gradient-to-r from-cyan-500 to-violet-600 text-base font-medium text-white shadow-lg shadow-violet-500/25"
+          className="h-12 w-full rounded-lg bg-[#1d211f] text-base font-semibold text-white shadow-[0_14px_30px_-20px_rgba(29,33,31,0.8)] hover:bg-[#2f5d50]"
         >
           {isLoading ? "登录中..." : "登录"}
         </Button>
       </form>
 
-      <div className="mt-6 flex flex-col items-center gap-3">
-        <span className="text-xs text-slate-400">或使用 Google 账号登录</span>
+      <div className="mt-8 flex flex-col items-center gap-4 pt-2">
+        <span className="text-sm text-[#858984]">也可以使用 Google 账号登录</span>
         <GoogleLoginButton
           onSuccess={onLoginSuccess}
           onError={(msg) => setError(msg)}
         />
       </div>
 
-      <div className="mt-8 text-center text-sm text-slate-500">
+      <div className="mt-8 text-center text-sm text-[#747873]">
         还没有账号？{" "}
         <Link
           href="/register"
-          className="font-medium text-violet-600 hover:text-violet-700"
+          className="font-semibold text-[#2f5d50] hover:text-[#1d211f]"
         >
           立即注册
         </Link>
@@ -175,7 +172,7 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
       <div className="mt-6 text-center">
         <Link
           href="/app"
-          className="inline-flex items-center gap-1.5 text-xs text-slate-400 transition-colors hover:text-slate-600"
+          className="inline-flex items-center gap-1.5 text-sm text-[#858984] transition-colors hover:text-[#2f5d50]"
         >
           <ArrowLeft className="size-3.5" />
           返回主页

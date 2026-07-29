@@ -82,7 +82,7 @@ export function GoogleLoginButton({
         size: "large",
         width: 320,
         text: "continue_with",
-        shape: "pill",
+        shape: "rectangular",
       })
       initializedRef.current = true
     }

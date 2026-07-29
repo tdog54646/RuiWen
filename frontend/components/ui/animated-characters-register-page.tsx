@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Eye, EyeOff } from "lucide-react"
 import { useAuth } from "@/components/auth/auth-context"
-import { LineLogo } from "@/components/brand/line-logo"
 import { authService } from "@/lib/api/auth"
 import { ApiError } from "@/lib/api/client"
 import {
@@ -160,16 +159,15 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
   if (configState === "disabled") {
     return (
       <AuthShell>
-        <div className="mb-8 flex flex-col items-center text-center">
-          <LineLogo className="w-44" priority />
-          <h1 className="text-gradient mt-3 text-2xl font-bold tracking-tight">加入 Line</h1>
+        <div className="mb-8">
+          <h1 className="font-display text-4xl font-medium tracking-[-0.05em] text-[#1d211f]">加入 Line</h1>
         </div>
         <MessageBanner tone="error" show>
           注册功能暂未开放，请联系管理员。
         </MessageBanner>
-        <div className="mt-8 text-center text-sm text-slate-500">
+        <div className="mt-8 text-center text-sm text-[#747873]">
           已有账号？{" "}
-          <Link href="/login" className="font-medium text-violet-600 hover:text-violet-700">
+          <Link href="/login" className="font-semibold text-[#2f5d50] hover:text-[#1d211f]">
             返回登录
           </Link>
         </div>
@@ -185,17 +183,16 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
 
   return (
     <AuthShell>
-      <div className="mb-8 flex flex-col items-center text-center">
-        <LineLogo className="w-44" priority />
-        <h1 className="text-gradient mt-3 text-2xl font-bold tracking-tight">加入 Line</h1>
-        <p className="mt-1.5 text-sm text-slate-500">
+      <div className="mb-10">
+        <h1 className="font-display text-4xl font-medium tracking-[-0.05em] text-[#1d211f]">加入 Line</h1>
+        <p className="mt-3 text-sm leading-6 text-[#747873]">
           {isEmailMode ? "使用邮箱与密码完成注册" : "使用手机号与验证码完成注册"}
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="identifier" className="text-xs text-slate-500">
+          <Label htmlFor="identifier" className="text-sm font-semibold text-[#626762]">
             {isEmailMode ? "邮箱" : "手机号"}
           </Label>
           <Input
@@ -213,7 +210,7 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
         {/* 手机号模式：验证码 */}
         {!isEmailMode && (
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="code" className="text-xs text-slate-500">
+            <Label htmlFor="code" className="text-sm font-semibold text-[#626762]">
               验证码
             </Label>
             <div className="flex gap-2">
@@ -229,14 +226,14 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
               <Button
                 type="button"
                 variant="outline"
-                className="h-12 shrink-0 border-white/60 bg-white/60 backdrop-blur-md"
+                className="h-12 shrink-0 rounded-lg border-[#cfd1ca] bg-transparent hover:bg-[#ecece6]"
                 disabled={sendingCode || countdown > 0}
                 onClick={handleSendCode}
               >
                 {countdown > 0 ? `${countdown}s` : "获取验证码"}
               </Button>
             </div>
-            <p className="text-xs text-slate-400">验证码用于验证账号所有权，有效期有限。</p>
+            <p className="text-sm text-[#858984]">验证码用于验证账号所有权，有效期有限。</p>
           </div>
         )}
 
@@ -244,7 +241,7 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
         {isEmailMode && (
           <>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password" className="text-xs text-slate-500">
+              <Label htmlFor="password" className="text-sm font-semibold text-[#626762]">
                 登录密码
               </Label>
               <div className="relative">
@@ -261,7 +258,7 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#858984] transition-colors hover:text-[#2f5d50] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]"
                 >
                   {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
                 </button>
@@ -269,7 +266,7 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="confirmPassword" className="text-xs text-slate-500">
+              <Label htmlFor="confirmPassword" className="text-sm font-semibold text-[#626762]">
                 再次输入密码
               </Label>
               <Input
@@ -294,14 +291,14 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
           />
           <Label
             htmlFor="agreeTerms"
-            className="cursor-pointer pt-0.5 text-sm font-normal leading-relaxed text-slate-600"
+            className="cursor-pointer pt-0.5 text-sm font-normal leading-relaxed text-[#626762]"
           >
             我已阅读并同意
-            <a href="#" className="text-violet-600" onClick={(e) => e.preventDefault()}>
+            <a href="#" className="text-[#2f5d50]" onClick={(e) => e.preventDefault()}>
               《用户协议》
             </a>
             和
-            <a href="#" className="text-violet-600" onClick={(e) => e.preventDefault()}>
+            <a href="#" className="text-[#2f5d50]" onClick={(e) => e.preventDefault()}>
               《隐私政策》
             </a>
           </Label>
@@ -320,15 +317,15 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
           type="submit"
           size="lg"
           disabled={submitDisabled}
-          className="h-12 w-full bg-gradient-to-r from-cyan-500 to-violet-600 text-base font-medium text-white shadow-lg shadow-violet-500/25"
+          className="h-12 w-full rounded-lg bg-[#1d211f] text-base font-semibold text-white shadow-[0_14px_30px_-20px_rgba(29,33,31,0.8)] hover:bg-[#2f5d50]"
         >
           {isLoading ? "注册中..." : "立即注册"}
         </Button>
       </form>
 
-      <div className="mt-8 text-center text-sm text-slate-500">
+      <div className="mt-8 text-center text-sm text-[#747873]">
         已有账号？{" "}
-        <Link href="/login" className="font-medium text-violet-600 hover:text-violet-700">
+        <Link href="/login" className="font-semibold text-[#2f5d50] hover:text-[#1d211f]">
           返回登录
         </Link>
       </div>
