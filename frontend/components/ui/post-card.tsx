@@ -9,43 +9,17 @@ import { useAuth } from "@/components/auth/auth-context"
 import { knowpostService } from "@/lib/api/knowpost"
 import { toast } from "sonner"
 import type { VisibleScope } from "@/lib/types/knowpost"
+import { cn } from "@/lib/utils"
 import { UserAvatar } from "./user-avatar"
 
-/** 由标题确定性地生成一个色相，保证同一篇文章占位封面颜色稳定。 */
-function hueFrom(seed: string): number {
-  let h = 0
-  for (let i = 0; i < seed.length; i++) {
-    h = (h * 31 + seed.charCodeAt(i)) % 360
-  }
-  return h
-}
-
-/** 无封面图时的渐变占位封面，保证有图/无图卡片高度完全一致。 */
-function CoverPlaceholder({ title, tag }: { title: string; tag?: string }) {
-  const hue = hueFrom(title)
+/** 无封面图时使用统一的编辑部式占位封面，避免随机渐变干扰内容。 */
+function CoverPlaceholder({ title }: { title: string }) {
   const initial = title.trim().charAt(0) || "知"
   return (
-    <div
-      className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden"
-      style={{
-        background: `linear-gradient(135deg, hsl(${hue} 72% 62%), hsl(${(hue + 48) % 360} 68% 46%))`,
-      }}
-    >
-      <div
-        className="absolute inset-0 opacity-25"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 22% 20%, rgba(255,255,255,0.9) 0, transparent 42%)",
-        }}
-      />
-      <span className="relative select-none text-6xl font-black text-white/95 drop-shadow-sm">
+    <div className="post-cover-placeholder relative flex size-full min-h-56 items-center justify-center overflow-hidden">
+      <span className="font-display relative select-none text-[clamp(4.5rem,9vw,8rem)] font-medium leading-none tracking-[-0.08em] text-[#e7e9df]">
         {initial}
       </span>
-      {tag && (
-        <span className="absolute bottom-2 left-2 rounded-full bg-black/20 px-2 py-0.5 text-[11px] font-medium text-white/90 backdrop-blur-sm">
-          #{tag}
-        </span>
-      )}
     </div>
   )
 }
@@ -65,6 +39,7 @@ export type PostCardProps = {
   coverImage?: string
   to?: string
   footerExtra?: ReactNode
+  featured?: boolean
   editable?: boolean
   onChanged?: (
     action: "top" | "visibility" | "delete",
@@ -78,13 +53,13 @@ export function PostCard({
   title,
   summary,
   tags,
-  authorTags,
   isTop,
   visible,
   teacher,
   coverImage,
   to,
   footerExtra,
+  featured = false,
   editable = false,
   onChanged,
   className,
@@ -159,66 +134,93 @@ export function PostCard({
 
   const content = (
     <>
-      <div className="overflow-hidden rounded-xl">
+      <div
+        className={cn(
+          "overflow-hidden border-b border-[#deded8] bg-[#e8e9e3]",
+          featured && "lg:border-b-0 lg:border-r",
+        )}
+      >
         {coverImage ? (
           <img
-            className="aspect-[4/3] w-full object-cover"
+            className={cn(
+              "w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.025]",
+              featured
+                ? "aspect-[16/9] lg:h-full lg:min-h-[26rem] lg:aspect-auto"
+                : "aspect-[4/3]",
+            )}
             src={coverImage}
             alt={title}
             loading="lazy"
           />
         ) : (
-          <CoverPlaceholder title={title} tag={tags[0]} />
+          <CoverPlaceholder title={title} />
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-2">
-        <h3 className="line-clamp-2 min-h-[2.5rem] font-semibold leading-snug">
-          {title}
-        </h3>
-        <p className="line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
-          {summary.trim() || "点击查看正文详情"}
-        </p>
+      <div className={cn("flex flex-1 flex-col p-5", featured && "lg:p-7")}>
         {tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div className="mb-4 flex flex-wrap gap-x-3 gap-y-1">
             {tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                className="text-sm font-medium text-[#557066]"
               >
-                #{tag}
+                {tag}
               </span>
             ))}
           </div>
         )}
-      </div>
-      <div className="mt-auto flex items-center gap-2 pt-2">
-        <UserAvatar
-          src={teacher.avatarUrl}
-          nickname={teacher.name}
-          className="size-7"
-        />
-        <div className="flex flex-col">
-          <span className="text-xs font-medium">{teacher.name}</span>
-          {authorTags && authorTags.length > 0 && (
-            <span className="text-[11px] text-muted-foreground">
-              {authorTags.map((t) => `#${t}`).join(" ")}
+        <h3
+          className={cn(
+            "font-display text-balance font-medium leading-[1.18] tracking-[-0.035em] text-[#202522] transition-colors duration-200 group-hover:text-[#2f5d50]",
+            featured ? "text-3xl lg:text-[2.5rem]" : "line-clamp-2 text-2xl",
+          )}
+        >
+          {title}
+        </h3>
+        <p
+          className={cn(
+            "mt-3 text-pretty text-sm leading-6 text-[#717570]",
+            featured ? "line-clamp-4" : "line-clamp-2 min-h-12",
+          )}
+        >
+          {summary.trim() || "打开文章，阅读完整内容。"}
+        </p>
+
+        <div
+          className={cn(
+            "mt-auto flex items-center gap-2.5 pt-5",
+            footerExtra && "pr-20",
+          )}
+        >
+          <UserAvatar
+            src={teacher.avatarUrl}
+            nickname={teacher.name}
+            className="size-7 rounded-lg"
+          />
+          <div className="min-w-0">
+            <span className="truncate text-sm font-semibold text-[#3c413e]">
+              {teacher.name}
+            </span>
+          </div>
+          {localVisible && (
+            <span
+              className={cn(
+                "ml-auto inline-flex items-center gap-1 text-sm font-medium",
+                localVisible === "public"
+                  ? "text-[#2f5d50]"
+                  : "text-[#626761]",
+              )}
+            >
+              {localVisible === "public" ? (
+                <Globe className="size-3" />
+              ) : (
+                <Lock className="size-3" />
+              )}
+              {localVisible === "public" ? "公开" : "私密"}
             </span>
           )}
         </div>
-        {localVisible && (
-          <span
-            className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-              localVisible === "public"
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-slate-200 text-slate-600"
-            }`}
-          >
-            {localVisible === "public" ? <Globe className="size-3" /> : <Lock className="size-3" />}
-            {localVisible === "public" ? "公开" : "私密"}
-          </span>
-        )}
       </div>
-      {footerExtra && <div className="pt-1">{footerExtra}</div>}
     </>
   )
 
@@ -227,12 +229,14 @@ export function PostCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      whileHover={{ y: -4 }}
-      className={`glass-surface glass-border relative flex h-full flex-col gap-3 rounded-2xl p-4 ${className ?? ""}`}
+      className={cn(
+        "group relative flex h-full flex-col overflow-hidden rounded-[1.25rem] border border-[#deded8] bg-[#fbfbf8] transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-1 hover:border-[#b9c2ba] hover:shadow-[0_22px_50px_-34px_rgba(37,54,46,0.55)]",
+        className,
+      )}
     >
       {localIsTop && (
         <div className="absolute left-3 top-3 z-[2]">
-          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-2 py-0.5 text-[11px] font-bold text-white shadow-sm">
+          <span className="inline-flex items-center gap-1 text-sm font-semibold text-white drop-shadow-md">
             <Pin className="size-3" />
             置顶
           </span>
@@ -243,7 +247,9 @@ export function PostCard({
           <button
             ref={btnRef}
             type="button"
-            className="absolute right-3 top-3 z-[5] flex size-7 items-center justify-center rounded-full border border-white/60 bg-white/70 text-slate-500 backdrop-blur-md transition-colors hover:bg-white/90"
+            aria-label="文章管理菜单"
+            aria-expanded={menuOpen}
+            className="absolute right-3 top-3 z-[5] flex size-8 items-center justify-center rounded-lg border border-[#d8d9d2] bg-[#fbfbf8]/90 text-[#666b66] backdrop-blur-md transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]"
             onClick={() => setMenuOpen(!menuOpen)}
           >
             <MoreHorizontal className="size-4" />
@@ -251,7 +257,7 @@ export function PostCard({
           {menuOpen && (
             <div
               ref={menuRef}
-              className="glass-surface absolute right-3 top-11 z-10 min-w-[140px] rounded-xl border border-white/60 p-1"
+              className="absolute right-3 top-12 z-10 min-w-[150px] rounded-xl border border-[#d8d9d2] bg-[#fbfbf8] p-1.5 shadow-[0_20px_45px_-25px_rgba(29,33,31,0.5)]"
             >
               {menuError && (
                 <div className="px-2 py-1 text-xs text-destructive">
@@ -290,7 +296,6 @@ export function PostCard({
                 <Pencil className="size-3.5" />
                 修改
               </Link>
-              <div className="my-1 h-px bg-border" />
               <button
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-destructive hover:bg-destructive/10"
                 onClick={handleDelete}
@@ -304,11 +309,34 @@ export function PostCard({
         </>
       )}
       {to ? (
-        <Link href={to} className="flex flex-1 flex-col gap-3">
+        <Link
+          href={to}
+          className={cn(
+            "flex flex-1 flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2f5d50]",
+            featured && "lg:grid lg:grid-cols-[1.18fr_0.82fr]",
+          )}
+        >
           {content}
         </Link>
       ) : (
-        content
+        <div
+          className={cn(
+            "flex flex-1 flex-col",
+            featured && "lg:grid lg:grid-cols-[1.18fr_0.82fr]",
+          )}
+        >
+          {content}
+        </div>
+      )}
+      {footerExtra && (
+        <div
+          className={cn(
+            "absolute bottom-5 right-5 z-[3]",
+            featured && "lg:bottom-7 lg:right-7",
+          )}
+        >
+          {footerExtra}
+        </div>
       )}
     </motion.article>
   )

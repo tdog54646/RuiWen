@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -51,30 +51,30 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --background: #f7f7f3;
+  --foreground: #1d211f;
+  --card: #fbfbf8;
+  --card-foreground: #1d211f;
+  --popover: #fbfbf8;
+  --popover-foreground: #1d211f;
+  --primary: #2f5d50;
+  --primary-foreground: #ffffff;
+  --secondary: #ecece6;
+  --secondary-foreground: #2d322f;
+  --muted: #ecece6;
+  --muted-foreground: #6f746f;
+  --accent: #e4ebe6;
+  --accent-foreground: #23483e;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: #deded8;
+  --input: #d8d9d2;
+  --ring: #2f5d50;
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
-  --radius: 0.625rem;
+  --radius: 0.6rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -128,11 +128,66 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply min-h-dvh bg-background text-foreground;
+    text-rendering: optimizeLegibility;
   }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
   }
+  ::selection {
+    background: #cfdcd3;
+    color: #1d211f;
+  }
+  :focus-visible {
+    scroll-margin: 7rem;
+  }
+}
+
+.font-display {
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
+}
+
+.app-canvas {
+  background:
+    radial-gradient(circle at 82% 4%, rgba(47, 93, 80, 0.055), transparent 25rem),
+    #f7f7f3;
+}
+
+.app-canvas::before {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  content: "";
+  background-image: radial-gradient(rgba(29, 33, 31, 0.11) 0.55px, transparent 0.55px);
+  background-size: 5px 5px;
+  opacity: 0.11;
+}
+
+.app-canvas:has(.creation-workspace) {
+  background: #f3f4f0;
+}
+
+.app-canvas:has(.creation-workspace)::before {
+  opacity: 0;
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 60;
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.5rem;
+  color: white;
+  background: #1d211f;
+  transform: translateY(-180%);
+  transition: transform 180ms ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 @layer utilities {
@@ -163,15 +218,13 @@
 
 /* 玻璃面板表面 */
 .glass-surface {
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.52) 100%);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.65);
+  background: rgba(251, 251, 248, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid #deded8;
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
-    0 8px 24px -12px rgba(15, 23, 42, 0.12),
-    0 2px 8px -4px rgba(79, 70, 229, 0.06);
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 18px 44px -34px rgba(37, 54, 46, 0.42);
 }
 .dark .glass-surface {
   background: linear-gradient(135deg, rgba(33, 36, 54, 0.78), rgba(20, 22, 38, 0.55));
@@ -191,17 +244,17 @@
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.55), rgba(139, 92, 246, 0.5) 50%, rgba(59, 130, 246, 0.35));
+  background: linear-gradient(135deg, rgba(47, 93, 80, 0.5), rgba(47, 93, 80, 0.08));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  opacity: 0.35;
+  opacity: 0;
   transition: opacity 0.35s ease;
   pointer-events: none;
   z-index: 1;
 }
 .glass-border:hover::before {
-  opacity: 1;
+  opacity: 0.7;
 }
 
 /* ============================================================
@@ -354,12 +407,9 @@
   position: absolute;
   inset: -25%;
   background:
-    radial-gradient(38% 48% at 12% 18%, rgba(34, 211, 238, 0.22), transparent 60%),
-    radial-gradient(34% 44% at 88% 12%, rgba(139, 92, 246, 0.24), transparent 60%),
-    radial-gradient(46% 56% at 78% 88%, rgba(59, 130, 246, 0.18), transparent 62%),
-    radial-gradient(30% 38% at 22% 82%, rgba(236, 72, 153, 0.12), transparent 60%);
-  filter: blur(26px);
-  animation: aurora-drift 20s ease-in-out infinite alternate;
+    radial-gradient(42% 52% at 14% 18%, rgba(47, 93, 80, 0.1), transparent 66%),
+    radial-gradient(38% 48% at 88% 12%, rgba(148, 132, 101, 0.09), transparent 64%);
+  filter: blur(30px);
   z-index: 0;
 }
 @keyframes aurora-drift {
@@ -379,28 +429,25 @@
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(to right, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
-  background-size: 46px 46px;
+    linear-gradient(to right, rgba(47, 54, 50, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(47, 54, 50, 0.04) 1px, transparent 1px);
+  background-size: 52px 52px;
   -webkit-mask-image: radial-gradient(ellipse 75% 60% at 50% 32%, #000 28%, transparent 78%);
   mask-image: radial-gradient(ellipse 75% 60% at 50% 32%, #000 28%, transparent 78%);
 }
 
 /* 渐变文字 */
 .text-gradient {
-  background: linear-gradient(118deg, #0f172a 0%, #4f46e5 48%, #0891b2 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #1d211f;
 }
 
 /* 闪烁/加载条 */
 .studio-shimmer {
   background: linear-gradient(
     90deg,
-    rgba(139, 92, 246, 0.08) 25%,
-    rgba(34, 211, 238, 0.32) 50%,
-    rgba(139, 92, 246, 0.08) 75%
+    rgba(83, 94, 87, 0.055) 25%,
+    rgba(83, 94, 87, 0.14) 50%,
+    rgba(83, 94, 87, 0.055) 75%
   );
   background-size: 200% 100%;
   animation: studio-shimmer 1.4s linear infinite;
@@ -433,8 +480,76 @@
 /* CTA 辉光 */
 .glow-cta {
   box-shadow:
-    0 10px 34px -10px rgba(99, 102, 241, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+    0 12px 30px -16px rgba(47, 93, 80, 0.58),
+    0 0 0 1px rgba(255, 255, 255, 0.42) inset;
+}
+
+.post-cover-placeholder {
+  background-color: #34463f;
+  background-image:
+    linear-gradient(112deg, transparent 0 44%, rgba(255, 255, 255, 0.055) 44% 44.5%, transparent 44.5%),
+    radial-gradient(circle at 82% 16%, rgba(202, 216, 203, 0.14), transparent 26%);
+}
+
+/* 后台管理：统一压低圆角、移除徽章气泡，并强化表格与数据层级。 */
+.admin-canvas main h1:not(.font-display) {
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
+  font-size: clamp(2rem, 3vw, 2.75rem);
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+  color: #1d211f;
+}
+
+.admin-canvas main h2 {
+  color: #343936;
+}
+
+.admin-canvas main .rounded-xl {
+  border-radius: 0.55rem;
+}
+
+.admin-canvas main .rounded-lg {
+  border-radius: 0.4rem;
+}
+
+.admin-canvas main .bg-white {
+  background-color: #fbfbf8;
+}
+
+.admin-canvas main table thead {
+  background-color: #eeeeea;
+}
+
+.admin-canvas main table tbody tr {
+  border-color: #e1e1db;
+}
+
+.admin-canvas main table tbody tr:hover {
+  background-color: #f1f1ec;
+}
+
+.admin-canvas main [data-slot="badge"] {
+  border-radius: 0.15rem;
+  border: 0;
+  border-left: 1px solid currentColor;
+  background: transparent !important;
+  padding-left: 0.45rem;
+  padding-right: 0;
+  box-shadow: none;
+}
+
+.admin-canvas main input,
+.admin-canvas main select,
+.admin-canvas main textarea {
+  border-color: #cfd1ca;
+  background-color: #fbfbf8;
+}
+
+.admin-stat-grid .admin-stat-card {
+  color: #25332d;
+  background: #e3e9e4;
+  box-shadow: 0 18px 48px -42px rgb(35 55 46 / 0.45);
 }
 
 @media (prefers-reduced-motion: reduce) {
