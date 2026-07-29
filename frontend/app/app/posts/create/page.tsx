@@ -4,7 +4,6 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useRef, useState } from "react"
 import { TagInput } from "@/components/ui/tag-input"
-import { SlideButton } from "@/components/ui/slide-button"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/components/auth/auth-context"
@@ -16,17 +15,12 @@ import {
   withCacheBuster,
 } from "@/lib/api/knowpost"
 import { AnimatePresence, motion } from "framer-motion"
-import {
-  GlassCard,
-  StatusChip,
-  StudioShell,
-  Toggle,
-} from "@/components/ui/studio"
+import { StudioShell } from "@/components/ui/studio"
 import { cn } from "@/lib/utils"
 import {
   AlertCircle,
+  ArrowLeft,
   CheckCircle2,
-  FileText,
   ImagePlus,
   Lock,
   Globe2,
@@ -40,10 +34,8 @@ const DynamicEditor = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex min-h-[600px] w-full items-center justify-center rounded-xl bg-white/40 text-sm text-slate-400 backdrop-blur">
-        <span className="studio-shimmer rounded-full px-4 py-1.5 text-transparent">
-          编辑器加载中
-        </span>
+      <div className="flex min-h-[600px] w-full items-center justify-center rounded-xl bg-[#f3f3ee] text-sm text-[#777b76]">
+        <span>编辑器加载中…</span>
       </div>
     ),
   }
@@ -60,11 +52,11 @@ export default function CreatePage() {
     <Suspense
       fallback={
         <StudioShell>
-          <div className="glass-surface glass-border relative rounded-2xl p-8">
-            <h1 className="text-gradient text-2xl font-bold tracking-tight">
+          <div className="rounded-2xl bg-[#fbfbf8] p-8 shadow-[0_20px_50px_-42px_rgba(29,33,31,0.55)] ring-1 ring-[#deded8]">
+            <h1 className="font-display text-3xl font-medium tracking-[-0.04em] text-[#1d211f]">
               创建新内容
             </h1>
-            <p className="mt-1 text-sm text-slate-500">加载中…</p>
+            <p className="mt-2 text-sm text-[#70746f]">加载中…</p>
           </div>
         </StudioShell>
       }
@@ -86,7 +78,6 @@ function CreatePageContent() {
   const [visiblePublic, setVisiblePublic] = useState(true)
   const [isTop, setIsTop] = useState(false)
   const [summary, setSummary] = useState("")
-  const [aiSummaryEnabled, setAiSummaryEnabled] = useState(false)
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -135,7 +126,7 @@ function CreatePageContent() {
         }
       })
       .catch((err) => {
-        if (cancelled) {
+        if (!cancelled) {
           setError(err instanceof Error ? err.message : "加载知文失败")
         }
       })
@@ -322,7 +313,7 @@ function CreatePageContent() {
         description: summary.trim() || undefined,
       })
       await knowpostService.publish(id)
-      setMessage("发布成功 ✅")
+      setMessage("发布成功")
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : isEditMode ? "保存失败" : "发布失败")
@@ -332,127 +323,120 @@ function CreatePageContent() {
     }
   }
 
-  const handleToggleAiSummary = async () => {
-    if (!aiSummaryEnabled) {
-      if (!tokens?.accessToken) {
-        setError("请先登录以使用 AI 摘要")
-        return
-      }
-      if (!content.trim()) {
-        setError("正文为空，无法生成摘要")
-        return
-      }
-      setAiSummaryLoading(true)
-      setMessage(null)
-      setError(null)
-      try {
-        const resp = await knowpostService.suggestDescription(
-          content,
-          tokens.accessToken,
-        )
-        setSummary((resp.description ?? "").slice(0, 50))
-        setAiSummaryEnabled(true)
-        setMessage("AI 摘要已生成")
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "生成失败")
-      } finally {
-        setAiSummaryLoading(false)
-      }
-    } else {
-      setAiSummaryEnabled(false)
+  const handleGenerateAiSummary = async () => {
+    if (!tokens?.accessToken) {
+      setError("请先登录以使用自动摘要")
+      return
+    }
+    if (!content.trim()) {
+      setError("正文为空，无法生成摘要")
+      return
+    }
+    setAiSummaryLoading(true)
+    setMessage(null)
+    setError(null)
+    try {
+      const resp = await knowpostService.suggestDescription(
+        content,
+        tokens.accessToken,
+      )
+      setSummary((resp.description ?? "").slice(0, 50))
+      setMessage("摘要已生成")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "生成失败")
+    } finally {
+      setAiSummaryLoading(false)
     }
   }
 
   return (
-    <StudioShell>
-      {/* Hero */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"
-      >
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur",
-                isEditMode
-                  ? "bg-amber-100/70 text-amber-700"
-                  : "bg-violet-100/70 text-violet-700",
-              )}
-            >
-              {isEditMode ? (
-                <FileText className="size-3" />
-              ) : (
-                <Sparkles className="size-3" />
-              )}
-              {isEditMode ? "编辑模式" : "创作模式"}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/60 px-2.5 py-1 text-[11px] text-slate-500 backdrop-blur">
-              <span
-                className={cn(
-                  "size-1.5 rounded-full",
-                  postId ? "bg-emerald-400 studio-pulse" : "bg-slate-300",
-                )}
-              />
-              {postId ? `草稿 #${postId.slice(-6)}` : "尚未生成草稿"}
-            </span>
-          </div>
+    <StudioShell className="creation-workspace pb-10">
+      <header className="flex flex-col gap-5 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/app/profile"
+            className="flex size-10 shrink-0 items-center justify-center rounded-lg text-[#626762] transition-colors hover:bg-[#e7e8e3] hover:text-[#1d211f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]"
+            aria-label="返回我的主页"
+          >
+            <ArrowLeft className="size-5" />
+          </Link>
           <div>
-            <h1 className="text-gradient text-3xl font-bold tracking-tight md:text-4xl">
+            <h1 className="font-display text-3xl font-medium tracking-[-0.045em] text-[#1d211f]">
               {pageTitle}
             </h1>
-            <p className="mt-1.5 text-sm text-slate-500">{pageSubtitle}</p>
+            <p className="mt-1 text-sm text-[#70746f]">{pageSubtitle}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <StatusChip icon={FileText}>{charCount} 字</StatusChip>
-          <StatusChip icon={ImagePlus}>
-            {uploadedImages.length}/{MAX_IMAGES}
-          </StatusChip>
+        <div className="flex flex-wrap items-center gap-4 md:justify-end">
+          <span className="text-sm text-[#777b76]">
+            {charCount} 字 · {uploadedImages.length} 张图片
+            {postId ? ` · 草稿 ${postId.slice(-6)}` : ""}
+          </span>
+          <Button
+            type="button"
+            onClick={() => void handlePublish()}
+            disabled={submitting || imageUploading}
+            className="h-10 rounded-lg bg-[#1d211f] px-6 text-sm font-semibold text-white shadow-none hover:bg-[#2f5d50]"
+          >
+            {submitting
+              ? isEditMode ? "保存中…" : "发布中…"
+              : isEditMode ? "保存修改" : "发布知文"}
+          </Button>
         </div>
-      </motion.div>
+      </header>
 
-      {/* Bento grid */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]">
+        <article className="overflow-hidden rounded-2xl bg-[#fbfbf8] shadow-[0_20px_55px_-45px_rgba(29,33,31,0.55)] ring-1 ring-[#deded8]">
         {/* 标题 */}
-        <GlassCard className="lg:col-span-8" delay={0.05}>
-          <Label className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-            标题
-          </Label>
+        <section className="px-6 pb-7 pt-8 md:px-8 md:pt-10">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="为你的知文起一个标题…"
-            className="mt-2 w-full bg-transparent text-2xl font-semibold tracking-tight text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-300"
+            aria-label="知文标题"
+            className="font-display w-full bg-transparent text-4xl font-medium leading-tight tracking-[-0.05em] text-[#1d211f] outline-none placeholder:font-normal placeholder:text-[#a0a39e] md:text-5xl"
           />
-        </GlassCard>
+          <p className="mt-4 text-sm text-[#858984]">用一句清楚的标题说明这篇内容讨论什么。</p>
+        </section>
 
-        {/* 封面图 */}
-        <GlassCard className="lg:col-span-4" delay={0.1}>
-          <Label className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-            封面图片
-          </Label>
-          <div
-            onClick={() => {
-              if (uploadedImages.length >= MAX_IMAGES) {
-                setError(`最多可选择 ${MAX_IMAGES} 张图片`)
-                return
-              }
-              fileInputRef.current?.click()
-            }}
-            className="group/drop mt-2 flex min-h-[124px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white/40 text-center transition-colors hover:border-cyan-400/70 hover:bg-cyan-50/40"
-          >
-            <div className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600 transition-transform group-hover/drop:scale-110">
-              <ImagePlus className="size-5" />
-            </div>
-            <span className="text-sm font-medium text-slate-700">
-              {imageUploading ? "上传中…" : "点击上传图片"}
-            </span>
-            <small className="text-xs text-slate-400">
-              JPG · PNG · SVG · {uploadedImages.length}/{MAX_IMAGES}
-            </small>
+        {/* 正文编辑器（主舞台） */}
+        <section className="flex flex-col bg-[#f8f8f5] p-4 md:p-5">
+          <div className="mb-4 flex items-center justify-between gap-4 px-1">
+            <Label className="text-sm font-semibold text-[#555a56]">
+              内容正文
+            </Label>
+            <span className="text-sm text-[#858984]">Markdown 编辑与预览</span>
+          </div>
+          <DynamicEditor
+            key={isEditMode ? `edit-${editId}` : "create"}
+            initialValue={content}
+            onChange={(val) => setContent(val)}
+          />
+        </section>
+        </article>
+
+        {/* 右侧控制栏 */}
+        <aside className="flex flex-col gap-6 rounded-2xl bg-[#fbfbf8] p-5 shadow-[0_20px_55px_-45px_rgba(29,33,31,0.55)] ring-1 ring-[#deded8] lg:sticky lg:top-28">
+          <h2 className="font-display text-2xl font-medium tracking-[-0.035em] text-[#1d211f]">发布设置</h2>
+          <section>
+            <Label className="text-sm font-semibold text-[#555a56]">封面与配图</Label>
+            <button
+              type="button"
+              onClick={() => {
+                if (uploadedImages.length >= MAX_IMAGES) {
+                  setError(`最多可选择 ${MAX_IMAGES} 张图片`)
+                  return
+                }
+                fileInputRef.current?.click()
+              }}
+              className="mt-3 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[#cfd1ca] bg-[#f3f3ee] text-center transition-colors hover:border-[#8f9992] hover:bg-[#efefe9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]"
+            >
+              <ImagePlus className="size-5 text-[#2f5d50]" />
+              <span className="text-sm font-semibold text-[#4f5550]">
+                {imageUploading ? "上传中…" : "添加图片"}
+              </span>
+              <span className="text-sm text-[#858984]">{uploadedImages.length}/{MAX_IMAGES}</span>
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -461,111 +445,76 @@ function CreatePageContent() {
               className="hidden"
               onChange={(e) => handleSelectImages(e.target.files)}
             />
-          </div>
-          {uploadedImages.length > 0 && (
-            <div className="mt-3 grid grid-cols-4 gap-2">
-              {uploadedImages.map((img, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, scale: 0.85 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: idx * 0.03 }}
-                  className="group relative"
-                >
-                  <img
-                    src={img.previewUrl}
-                    alt=""
-                    className="aspect-square w-full cursor-pointer rounded-lg object-cover ring-1 ring-black/5"
-                    onClick={() => setPreviewUrl(img.previewUrl)}
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100"
-                    onClick={() => removeImage(idx)}
+            {uploadedImages.length > 0 && (
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {uploadedImages.map((img, idx) => (
+                  <motion.div
+                    key={img.ossUrl}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="group relative"
                   >
-                    <X className="size-3" />
-                  </button>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </GlassCard>
+                    <img
+                      src={img.previewUrl}
+                      alt={`已上传图片 ${idx + 1}`}
+                      className="aspect-square w-full cursor-pointer rounded-lg object-cover ring-1 ring-black/5"
+                      onClick={() => setPreviewUrl(img.previewUrl)}
+                    />
+                    <button
+                      type="button"
+                      aria-label={`移除图片 ${idx + 1}`}
+                      className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-md bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                      onClick={() => removeImage(idx)}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </section>
 
-        {/* 正文编辑器（主舞台） */}
-        <GlassCard
-          className="lg:col-span-8"
-          delay={0.15}
-          disableHover
-          contentClassName="flex flex-col"
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <Label className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-              内容正文
-            </Label>
-            <span className="text-[11px] text-slate-400">Markdown · 实时预览</span>
-          </div>
-          <DynamicEditor
-            key={isEditMode ? `edit-${editId}` : "create"}
-            initialValue={content}
-            onChange={(val) => setContent(val)}
-          />
-        </GlassCard>
-
-        {/* 右侧控制栏 */}
-        <div className="flex flex-col gap-4 lg:col-span-4">
           {/* 知识摘要 */}
-          <GlassCard
-            className="flex-1"
-            delay={0.2}
-            contentClassName="flex h-full flex-col"
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <Label className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          <section className="flex flex-col">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <Label className="text-sm font-semibold text-[#555a56]">
                 知识摘要
               </Label>
-              <div className="flex items-center gap-2">
-                <Sparkles
-                  className={cn(
-                    "size-3.5 transition-colors",
-                    aiSummaryEnabled ? "text-violet-500" : "text-slate-300",
-                  )}
-                />
-                <span className="text-xs text-slate-500">AI 摘要</span>
-                <Toggle
-                  checked={aiSummaryEnabled}
-                  loading={aiSummaryLoading}
-                  onChange={handleToggleAiSummary}
-                />
-              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void handleGenerateAiSummary()}
+                disabled={aiSummaryLoading}
+                className="h-8 gap-1.5 rounded-md px-2 text-[#4f5550] hover:bg-[#ecece6]"
+              >
+                <Sparkles className="size-4" />
+                {aiSummaryLoading ? "生成中…" : "生成摘要"}
+              </Button>
             </div>
             <textarea
               id="summary"
-              className="min-h-[80px] flex-1 w-full resize-y rounded-xl border border-white/60 bg-white/50 p-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white/70"
+              className="min-h-32 w-full resize-y rounded-xl border border-[#d8d9d2] bg-[#f3f3ee] p-3 text-sm leading-6 text-[#343936] outline-none transition-colors placeholder:text-[#969994] focus:border-[#2f5d50] focus:bg-[#fbfbf8]"
               placeholder="填写内容摘要（50字以内）"
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
             />
-            <div className="mt-2 flex items-center justify-between text-[11px]">
+            <div className="mt-3 flex items-center justify-between text-sm">
               <span
                 className={cn(
                   summary.trim().length > 50
                     ? "text-destructive"
-                    : "text-slate-400",
+                    : "text-[#858984]",
                 )}
               >
                 {summary.trim().length} / 50
               </span>
-              {aiSummaryLoading && (
-                <span className="studio-shimmer rounded-full px-2 py-0.5 text-transparent">
-                  AI 生成中
-                </span>
-              )}
             </div>
-          </GlassCard>
+          </section>
 
           {/* 标签 */}
-          <GlassCard delay={0.25}>
-            <Label className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          <section>
+            <Label className="text-sm font-semibold text-[#555a56]">
               标签
             </Label>
             <div className="mt-2">
@@ -575,39 +524,39 @@ function CreatePageContent() {
                 placeholder="输入标签后按回车"
               />
             </div>
-          </GlassCard>
+          </section>
 
           {/* 可见范围 */}
-          <GlassCard delay={0.3}>
-            <div
-              className="flex cursor-pointer items-center justify-between"
-              onClick={() => setVisiblePublic((prev) => !prev)}
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-violet-600">
-                  {visiblePublic ? (
-                    <Globe2 className="size-4" />
-                  ) : (
-                    <Lock className="size-4" />
-                  )}
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-slate-800">
-                    可见范围
-                  </div>
-                  <small className="text-xs text-slate-400">
-                    {visiblePublic ? "公开 · 任何人可见" : "私密 · 仅自己可见"}
-                  </small>
-                </div>
-              </div>
-              <Toggle
-                checked={visiblePublic}
-                interactive={false}
-                onChange={() => setVisiblePublic((prev) => !prev)}
-              />
+          <section>
+            <Label className="text-sm font-semibold text-[#555a56]">可见范围</Label>
+            <div className="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-[#ecece6] p-1">
+              <button
+                type="button"
+                aria-pressed={visiblePublic}
+                onClick={() => setVisiblePublic(true)}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]",
+                  visiblePublic ? "bg-[#fbfbf8] text-[#263d35] shadow-sm" : "text-[#777b76] hover:text-[#343936]",
+                )}
+              >
+                <Globe2 className="size-4" />
+                公开
+              </button>
+              <button
+                type="button"
+                aria-pressed={!visiblePublic}
+                onClick={() => setVisiblePublic(false)}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]",
+                  !visiblePublic ? "bg-[#fbfbf8] text-[#263d35] shadow-sm" : "text-[#777b76] hover:text-[#343936]",
+                )}
+              >
+                <Lock className="size-4" />
+                私密
+              </button>
             </div>
-          </GlassCard>
-        </div>
+          </section>
+        </aside>
       </div>
 
       {/* 消息条 */}
@@ -619,7 +568,7 @@ function CreatePageContent() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.98 }}
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              className="flex items-center gap-2 rounded-xl border border-red-200/60 bg-red-50/70 px-4 py-2.5 text-sm text-red-600 backdrop-blur-md"
+              className="flex items-center gap-2 border-l-2 border-red-500 bg-red-50/60 px-4 py-3 text-sm text-red-700"
             >
               <AlertCircle className="size-4 shrink-0" />
               {error}
@@ -633,7 +582,7 @@ function CreatePageContent() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.98 }}
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              className="flex items-center gap-2 rounded-xl border border-emerald-200/60 bg-emerald-50/70 px-4 py-2.5 text-sm text-emerald-600 backdrop-blur-md"
+              className="flex items-center gap-2 border-l-2 border-[#2f5d50] bg-[#e7eee9] px-4 py-3 text-sm text-[#2f5d50]"
             >
               <CheckCircle2 className="size-4 shrink-0" />
               {message}
@@ -641,43 +590,6 @@ function CreatePageContent() {
           )}
         </AnimatePresence>
       </div>
-
-      {/* 滑动发布 CTA */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.35, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="flex flex-col items-center gap-3 pt-2"
-      >
-        <div className="glow-cta rounded-full">
-          <SlideButton
-            onSlideComplete={async () => {
-              const ok = await handlePublish()
-              if (!ok) {
-                throw new Error(isEditMode ? "保存失败" : "发布失败")
-              }
-            }}
-            disabled={submitting || imageUploading}
-            resetOnSuccessMs={1500}
-            idleText={isEditMode ? "滑动保存" : "滑动发布"}
-            loadingText={isEditMode ? "保存中" : "发布中"}
-            successText={isEditMode ? "已保存" : "已发布"}
-            errorText={isEditMode ? "重试保存" : "重试发布"}
-            aria-label={
-              submitting
-                ? isEditMode
-                  ? "保存中"
-                  : "发布中"
-                : isEditMode
-                  ? "滑动保存"
-                  : "滑动发布"
-            }
-          />
-        </div>
-        <p className="text-xs text-slate-400">
-          向右滑动 · {isEditMode ? "保存修改" : "发布你的知文"}
-        </p>
-      </motion.div>
 
       {/* 图片预览灯箱 */}
       <AnimatePresence>
@@ -717,9 +629,9 @@ function CenterCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="glass-surface glass-border mx-auto mt-10 w-full max-w-md rounded-2xl p-6">
-      <h1 className="text-gradient text-2xl font-bold tracking-tight">{title}</h1>
-      {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+    <div className="mx-auto mt-10 w-full max-w-md rounded-2xl bg-[#fbfbf8] p-7 shadow-[0_20px_50px_-42px_rgba(29,33,31,0.55)] ring-1 ring-[#deded8]">
+      <h1 className="font-display text-3xl font-medium tracking-[-0.04em] text-[#1d211f]">{title}</h1>
+      {subtitle && <p className="mt-2 text-sm text-[#70746f]">{subtitle}</p>}
       <div className="mt-5">{children}</div>
     </div>
   )
