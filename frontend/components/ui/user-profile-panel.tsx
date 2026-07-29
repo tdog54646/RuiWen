@@ -7,7 +7,6 @@ import { RelationCounters } from "@/components/ui/relation-counters"
 import { UserAvatar } from "@/components/ui/user-avatar"
 import {
   EmptyState,
-  GlassCard,
   MessageBanner,
   PageHeader,
   StudioShell,
@@ -78,44 +77,47 @@ export function UserProfilePanel({
         chips={headerAction}
       />
 
-      <GlassCard delay={0.05} contentClassName="flex flex-col gap-5">
-        <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:gap-6 sm:text-left">
-          <div className="rounded-full bg-gradient-to-br from-cyan-400/50 via-violet-500/40 to-blue-500/50 p-[3px] shadow-lg shadow-violet-500/20">
-            <UserAvatar
-              src={profile?.avatar || undefined}
-              nickname={displayName}
-              className="size-32 rounded-full ring-2 ring-white"
-            />
+      <section className="grid gap-8 rounded-2xl bg-[#fbfbf8] p-6 shadow-[0_24px_55px_-44px_rgba(29,33,31,0.55)] ring-1 ring-[#deded8] md:grid-cols-[10rem_minmax(0,1fr)_auto] md:items-center md:gap-10 md:p-8">
+        <div className="w-fit rounded-xl bg-[#ecece6] p-1.5">
+          <UserAvatar
+            src={profile?.avatar || undefined}
+            nickname={displayName}
+            className="size-36 rounded-none"
+          />
+        </div>
+        <div className="min-w-0">
+          <span className="font-display block truncate text-4xl font-medium tracking-[-0.045em] text-[#1d211f]">
+            {displayName}
+          </span>
+          <div className="mt-4 flex flex-wrap gap-2 text-sm text-[#656a65]">
+            {tags.length > 0
+              ? tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-md bg-[#ecece6] px-2 py-1 text-xs font-medium text-[#555a56]"
+                  >
+                    #{tag}
+                  </span>
+                ))
+              : <span className="text-sm text-[#777b76]">未设置标签</span>}
           </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-2xl font-bold text-slate-900">{displayName}</span>
-            <div className="flex flex-wrap justify-center gap-2 text-sm text-slate-500 sm:justify-start">
-              {tags.length > 0
-                ? tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-full bg-violet-100/70 px-2 py-0.5 text-xs font-medium text-violet-700"
-                    >
-                      #{tag}
-                    </span>
-                  ))
-                : <span className="text-xs">未设置标签</span>}
-            </div>
-          </div>
+          <p className="mt-5 max-w-2xl whitespace-pre-wrap text-sm leading-7 text-[#686d68]">
+            {profile?.bio ?? "暂无简介"}
+          </p>
         </div>
 
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600">
-          {profile?.bio ?? "暂无简介"}
-        </p>
+        <div className="rounded-xl bg-[#efefe9] p-5">
+          {profile?.id ? <RelationCounters userId={profile.id} /> : null}
+        </div>
+      </section>
 
-        {profile?.id ? <RelationCounters userId={profile.id} /> : null}
-      </GlassCard>
-
-      <div className="flex flex-col gap-3">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-lg font-semibold text-slate-800">{postsTitle}</h2>
+      <section className="flex flex-col gap-5 pt-5">
+        <div className="flex items-end justify-between pt-3">
+          <div>
+            <h2 className="font-display text-3xl font-medium tracking-[-0.04em] text-[#1d211f]">{postsTitle}</h2>
+          </div>
           {!loading && items.length > 0 && (
-            <span className="text-xs text-slate-400">共 {items.length} 篇</span>
+            <span className="text-xs tabular-nums text-[#858984]">共 {items.length} 篇</span>
           )}
         </div>
 
@@ -123,10 +125,10 @@ export function UserProfilePanel({
           {error}
         </MessageBanner>
 
-        <div className="columns-1 gap-4 sm:columns-2 lg:columns-3">
-          {items.map((item) => (
-            <div key={item.id} className="mb-4 break-inside-avoid">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-12">
+          {items.map((item, index) => (
               <PostCard
+                key={item.id}
                 id={item.id}
                 title={item.title}
                 summary={item.description ?? ""}
@@ -140,6 +142,8 @@ export function UserProfilePanel({
                 }}
                 coverImage={item.coverImage}
                 to={`/app/posts/${item.id}`}
+                featured={index === 0}
+                className={index === 0 ? "sm:col-span-2 lg:col-span-8" : "lg:col-span-4"}
                 editable={editable}
                 onChanged={(action, payload) => onPostChanged?.(item.id, action, payload)}
                 footerExtra={
@@ -157,7 +161,6 @@ export function UserProfilePanel({
                   />
                 }
               />
-            </div>
           ))}
         </div>
 
@@ -166,7 +169,7 @@ export function UserProfilePanel({
         ) : items.length === 0 ? (
           <EmptyState>{emptyText}</EmptyState>
         ) : null}
-      </div>
+      </section>
     </StudioShell>
   )
 }

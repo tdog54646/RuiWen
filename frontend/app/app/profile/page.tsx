@@ -39,7 +39,7 @@ export default function ProfilePage() {
       profile={user}
       headerAction={(
         <Link href="/app/profile/edit">
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" className="rounded-lg border-[#cfd1ca] bg-transparent hover:bg-[#ecece6]">
             编辑资料
           </Button>
         </Link>

@@ -6,16 +6,36 @@ import { PostCard } from "@/components/ui/post-card"
 import { LikeFavBar } from "@/components/ui/like-fav-bar"
 import {
   EmptyState,
-  GlassCard,
+  MessageBanner,
   PageHeader,
-  StatusChip,
   StudioShell,
 } from "@/components/ui/studio"
 import { searchService } from "@/lib/api/search"
 import { useAuth } from "@/components/auth/auth-context"
 import type { FeedItem } from "@/lib/types/knowpost"
 import { Button } from "@/components/ui/button"
-import { Search } from "lucide-react"
+
+function SearchSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-12">
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div
+          key={index}
+          className={index === 0 ? "sm:col-span-2 lg:col-span-8" : "lg:col-span-4"}
+        >
+          <div className="overflow-hidden rounded-xl border border-[#deded8] bg-[#fbfbf8]">
+            <div className={index === 0 ? "studio-shimmer aspect-[16/7]" : "studio-shimmer aspect-[4/3]"} />
+            <div className="space-y-3 p-5">
+              <div className="studio-shimmer h-3 w-20 rounded-sm" />
+              <div className="studio-shimmer h-6 w-4/5 rounded-sm" />
+              <div className="studio-shimmer h-4 w-full rounded-sm" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function parseTags(tagJson?: string): string[] {
   if (!tagJson) return []
@@ -35,6 +55,7 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [suggestLoading, setSuggestLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const debounceRef = useRef<number | null>(null)
   const { user } = useAuth()
   const [showLoginHint, setShowLoginHint] = useState(false)
@@ -44,16 +65,18 @@ export default function SearchPage() {
     if (!text) return
     if (!user) setShowLoginHint(true)
     setQ(text)
+    setError(null)
     setLoading(true)
     try {
       const resp = await searchService.query({ q: text, size: 20 })
       setItems(resp.items ?? [])
       setAfter(resp.nextAfter ?? null)
       setHasMore(!!resp.hasMore)
-    } catch {
+    } catch (err) {
       setItems([])
       setAfter(null)
       setHasMore(false)
+      setError(err instanceof Error ? err.message : "搜索失败，请稍后重试")
     } finally {
       setLoading(false)
     }
@@ -62,13 +85,14 @@ export default function SearchPage() {
   const loadMore = async () => {
     if (!q.trim() || !after) return
     setLoading(true)
+    setError(null)
     try {
       const resp = await searchService.query({ q: q.trim(), size: 20, after })
       setItems((prev) => [...prev, ...(resp.items ?? [])])
       setAfter(resp.nextAfter ?? null)
       setHasMore(!!resp.hasMore)
-    } catch {
-      // keep existing
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "加载更多失败")
     } finally {
       setLoading(false)
     }
@@ -77,54 +101,55 @@ export default function SearchPage() {
   return (
     <StudioShell>
       <PageHeader
-        badge={
-          <StatusChip icon={Search} tone="cyan">
-            知识检索
-          </StatusChip>
-        }
         title="搜索你想学习的知识"
-        subtitle="从提示词或你的历史记录开始探索，连接灵感与成长"
+        subtitle="输入主题、问题或关键词，从同学们的公开知文中找到可靠线索。"
       />
 
-      <GlassCard delay={0.05} disableHover>
+      <section className="py-4">
         <SearchBar
-          placeholder="搜索你想学习的知识..."
-          value={q}
-          suggestions={suggestions}
-          suggestLoading={suggestLoading}
-          onSuggestionClick={(s) => executeSearch(s)}
-          onChange={(val) => {
-            setQ(val)
-            if (debounceRef.current) window.clearTimeout(debounceRef.current)
-            debounceRef.current = window.setTimeout(async () => {
-              if (!val.trim()) {
-                setSuggestions([])
-                return
-              }
-              try {
-                setSuggestLoading(true)
-                const resp = await searchService.suggest(val.trim(), 10)
-                setSuggestions(resp.items ?? [])
-              } catch {
-                setSuggestions([])
-              } finally {
-                setSuggestLoading(false)
-              }
-            }, 300)
-          }}
-          onSubmit={() => executeSearch(q)}
+            placeholder="输入主题、问题或关键词"
+            value={q}
+            suggestions={suggestions}
+            suggestLoading={suggestLoading}
+            onSuggestionClick={(s) => executeSearch(s)}
+            onChange={(val) => {
+              setQ(val)
+              if (debounceRef.current) window.clearTimeout(debounceRef.current)
+              debounceRef.current = window.setTimeout(async () => {
+                if (!val.trim()) {
+                  setSuggestions([])
+                  return
+                }
+                try {
+                  setSuggestLoading(true)
+                  const resp = await searchService.suggest(val.trim(), 10)
+                  setSuggestions(resp.items ?? [])
+                } catch {
+                  setSuggestions([])
+                } finally {
+                  setSuggestLoading(false)
+                }
+              }, 300)
+            }}
+            onSubmit={() => executeSearch(q)}
         />
-      </GlassCard>
+      </section>
 
       {showLoginHint && !user && (
-        <div className="rounded-xl border border-amber-200/60 bg-amber-50/70 px-4 py-2.5 text-sm text-amber-700 backdrop-blur-md">
+        <div className="border-l-2 border-[#8a7345] bg-[#f3efe4] px-4 py-3 text-sm text-[#6f5b34]">
           当前为未登录状态，登录后可获得更完整的推荐与学习记录。
         </div>
       )}
 
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold text-slate-800">搜索结果</h2>
-        <span className="text-xs text-slate-400">
+      <MessageBanner tone="error" show={!!error}>
+        {error}
+      </MessageBanner>
+
+      <div className="flex items-end justify-between pt-5">
+        <div>
+          <h2 className="font-display text-3xl font-medium tracking-[-0.04em] text-[#1d211f]">搜索结果</h2>
+        </div>
+        <span className="text-sm text-[#858984]">
           {loading
             ? "加载中…"
             : items.length
@@ -133,10 +158,13 @@ export default function SearchPage() {
         </span>
       </div>
 
-      <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 xl:columns-4">
-        {items.map((item) => (
-          <div key={item.id} className="mb-4 break-inside-avoid">
+      {loading && items.length === 0 ? (
+        <SearchSkeleton />
+      ) : (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-12">
+          {items.map((item, index) => (
             <PostCard
+              key={item.id}
               id={item.id}
               title={item.title}
               summary={item.description ?? ""}
@@ -149,6 +177,8 @@ export default function SearchPage() {
               }}
               coverImage={item.coverImage}
               to={`/app/posts/${item.id}`}
+              featured={index === 0}
+              className={index === 0 ? "sm:col-span-2 lg:col-span-8" : "lg:col-span-4"}
               footerExtra={
                 <LikeFavBar
                   entityId={item.id}
@@ -161,14 +191,14 @@ export default function SearchPage() {
                 />
               }
             />
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {loading && items.length === 0 ? (
-        <EmptyState loading />
-      ) : !loading && q.trim() && items.length === 0 ? (
-        <EmptyState>没有找到相关知文，换个关键词试试</EmptyState>
+      {!loading && q.trim() && items.length === 0 ? (
+        <EmptyState className="rounded-2xl bg-[#efefe9] py-20 text-[#6f746f]">
+          没有找到相关知文，换一个更具体的关键词试试。
+        </EmptyState>
       ) : null}
 
       {hasMore && (
@@ -177,7 +207,7 @@ export default function SearchPage() {
             onClick={loadMore}
             disabled={loading}
             variant="outline"
-            className="border-white/60 bg-white/60 backdrop-blur-md"
+            className="rounded-lg border-[#cfd1ca] bg-transparent px-6 hover:bg-[#ecece6]"
           >
             {loading ? "加载中…" : "加载更多"}
           </Button>

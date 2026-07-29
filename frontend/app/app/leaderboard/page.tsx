@@ -7,11 +7,8 @@ import { Button } from "@/components/ui/button"
 import { UserAvatar } from "@/components/ui/user-avatar"
 import {
   EmptyState,
-  GlassCard,
   MessageBanner,
   PageHeader,
-  SectionLabel,
-  StatusChip,
   StudioShell,
 } from "@/components/ui/studio"
 import { leaderboardService } from "@/lib/api/leaderboard"
@@ -20,7 +17,6 @@ import type {
   LeaderboardUserPosition,
   RankType,
 } from "@/lib/types/leaderboard"
-import { Trophy } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 function formatDateToYYYYMMDD(date: Date): string {
@@ -41,10 +37,10 @@ function rankTypeLabel(rankType: RankType): string {
 }
 
 function rankBadgeClass(rank: number): string {
-  if (rank === 1) return "bg-gradient-to-br from-amber-300 to-orange-500 text-white"
-  if (rank === 2) return "bg-gradient-to-br from-slate-300 to-slate-500 text-white"
-  if (rank === 3) return "bg-gradient-to-br from-orange-300 to-amber-700 text-white"
-  return "bg-white/60 text-slate-500"
+  if (rank === 1) return "text-[#8a6a24]"
+  if (rank === 2) return "text-[#68706a]"
+  if (rank === 3) return "text-[#885d3c]"
+  return "text-[#8b8f8a]"
 }
 
 export default function LeaderboardPage() {
@@ -126,27 +122,19 @@ export default function LeaderboardPage() {
   return (
     <StudioShell>
       <PageHeader
-        badge={
-          <StatusChip icon={Trophy} tone="amber">
-            今日点赞榜
-          </StatusChip>
-        }
         title="排行榜"
-        subtitle={`Top 20 · ${date}`}
-        chips={<StatusChip>更新中</StatusChip>}
+        subtitle={`每日点赞得分 Top 20 · ${date.slice(0, 4)}.${date.slice(4, 6)}.${date.slice(6, 8)}`}
       />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-6 pt-2 lg:grid-cols-[minmax(0,1fr)_21rem]">
         {/* Top 20 榜单 */}
-        <GlassCard
-          delay={0.05}
-          disableHover
-          className="lg:col-span-8"
-          contentClassName="flex flex-col gap-3"
-        >
-          <SectionLabel>今日 Top 20</SectionLabel>
+        <section className="flex flex-col rounded-2xl bg-[#efefe9] p-4 md:p-6">
+          <div className="mb-4 flex items-end justify-between px-1 py-2">
+            <h2 className="font-display text-3xl tracking-[-0.04em] text-[#1d211f]">今日 Top 20</h2>
+            <span className="text-sm text-[#777b76]">点赞得分</span>
+          </div>
 
-          <div className="grid grid-cols-[56px_1fr_110px] items-center gap-2 border-b border-white/50 px-1 pb-2 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          <div className="grid grid-cols-[64px_1fr_100px] items-center gap-3 rounded-lg bg-[#e3e3dd] px-4 py-3 text-sm font-semibold text-[#606560]">
             <span>排名</span>
             <span>用户</span>
             <span className="text-right">点赞得分</span>
@@ -162,17 +150,17 @@ export default function LeaderboardPage() {
             <EmptyState>今日暂无排行数据</EmptyState>
           )}
 
-          <div className="flex flex-col">
+          <div className="mt-2 flex flex-col gap-2">
             {!loadingTop &&
               !topError &&
               items.map((item) => (
                 <div
                   key={`${item.userId}-${item.rank}`}
-                  className="grid grid-cols-[56px_1fr_110px] items-center gap-2 rounded-lg px-1 py-2.5 transition-colors hover:bg-white/50"
+                  className="grid grid-cols-[64px_1fr_100px] items-center gap-3 rounded-xl bg-[#fbfbf8] px-4 py-4 shadow-[0_10px_25px_-24px_rgba(29,33,31,0.55)] transition-transform hover:-translate-y-0.5"
                 >
                   <span
                     className={cn(
-                      "flex size-8 items-center justify-center rounded-full text-xs font-bold",
+                      "font-display text-2xl tabular-nums",
                       rankBadgeClass(item.rank),
                     )}
                   >
@@ -182,33 +170,29 @@ export default function LeaderboardPage() {
                     <UserAvatar
                       src={item.avatar}
                       nickname={item.nickname ?? "用户"}
-                      className="size-8"
+                      className="size-9 rounded-lg"
                     />
-                    <span className="truncate text-sm font-medium text-slate-700">
+                    <span className="truncate text-sm font-semibold text-[#414642]">
                       {item.nickname?.trim() || `用户 ${item.userId}`}
                     </span>
                   </div>
-                  <span className="text-right text-sm font-semibold text-slate-800">
+                  <span className="text-right font-mono text-sm font-semibold tabular-nums text-[#252a27]">
                     {formatScore(item.score)}
                   </span>
                 </div>
               ))}
           </div>
-        </GlassCard>
+        </section>
 
         {/* 我的排行 */}
-        <GlassCard
-          delay={0.1}
-          className="lg:col-span-4"
-          contentClassName="flex flex-col gap-4"
-        >
-          <SectionLabel>我的排行</SectionLabel>
+        <aside className="h-fit rounded-2xl bg-[#fbfbf8] p-6 shadow-[0_20px_45px_-38px_rgba(29,33,31,0.55)] ring-1 ring-[#deded8] lg:sticky lg:top-28">
+          <h2 className="font-display text-3xl tracking-[-0.035em] text-[#1d211f]">我的排行</h2>
 
           {!user && (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-slate-500">登录后查看个人排行</p>
+            <div className="mt-6 flex flex-col gap-4">
+              <p className="text-sm leading-6 text-[#70746f]">登录后查看自己的今日得分与名次。</p>
               <Link href="/login?next=/app/leaderboard">
-                <Button size="sm" className="w-full">
+                <Button size="sm" className="w-full rounded-lg bg-[#1d211f] text-white hover:bg-[#2f5d50]">
                   去登录
                 </Button>
               </Link>
@@ -222,33 +206,33 @@ export default function LeaderboardPage() {
           </MessageBanner>
 
           {user && !loadingMine && !mineError && myPosition && (
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
+            <div className="mt-6 flex flex-col gap-5">
+              <div className="flex items-center gap-3.5">
                 <UserAvatar
                   src={myPosition.avatar ?? user.avatar}
                   nickname={myPosition.nickname ?? user.nickname}
-                  className="size-12 ring-2 ring-white/60"
+                  className="size-12 rounded-xl ring-2 ring-[#deded8]"
                 />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-800">
+                  <p className="truncate text-sm font-semibold text-[#252a27]">
                     {myPosition.nickname || user.nickname || "我"}
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="mt-1 text-sm text-[#777b76]">
                     得分 {formatScore(myPosition.score)}
                   </p>
                 </div>
               </div>
-              <div className="rounded-xl border border-white/60 bg-white/40 p-4 text-center backdrop-blur-md">
-                <p className="text-3xl font-bold text-gradient">
+              <div className="rounded-xl bg-[#efefe9] p-5">
+                <p className="font-display text-5xl font-medium tracking-[-0.05em] text-[#2f5d50]">
                   {myPosition.rank ? `#${myPosition.rank}` : "—"}
                 </p>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-2 text-sm text-[#70746f]">
                   {rankTypeLabel(myPosition.rankType)}
                 </p>
               </div>
             </div>
           )}
-        </GlassCard>
+        </aside>
       </div>
     </StudioShell>
   )
