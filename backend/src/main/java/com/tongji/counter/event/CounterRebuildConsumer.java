@@ -11,6 +11,9 @@ import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 
 /**
  * 灾难场景下的计数重建消费者：基于 earliest 回放历史事件，直接折叠到 SDS。
@@ -40,23 +43,31 @@ public class CounterRebuildConsumer {
     public void onMessage(String message, Acknowledgment ack) throws Exception {
         // 灾备场景：从最早位点回放历史事件，直接折叠到 SDS
         CounterEvent evt = objectMapper.readValue(message, CounterEvent.class);
-        String cntKey = CounterKeys.sdsKey(evt.getEntityType(), evt.getEntityId());
-        try {
-            redis.execute(incrScript, List.of(cntKey),
-                    String.valueOf(CounterSchema.SCHEMA_LEN),
-                    String.valueOf(CounterSchema.FIELD_SIZE),
-                    String.valueOf(evt.getIdx()),
-                    String.valueOf(evt.getDelta()));
-            ack.acknowledge(); // 写入成功后提交位点，避免重复回放
-        } catch (Exception ex) {
-            // 不提交位点以便重试
+        if (evt.getIdx() < 0 || evt.getIdx() >= CounterSchema.SCHEMA_LEN
+                || (evt.getDelta() != 1 && evt.getDelta() != -1)) {
+            throw new IllegalArgumentException("计数重建事件字段非法");
         }
+        String cntKey = CounterKeys.sdsKey(evt.getEntityType(), evt.getEntityId());
+        String eventId = evt.getEventId();
+        if (eventId == null || eventId.isBlank()) {
+            eventId = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(message.getBytes(StandardCharsets.UTF_8)));
+        }
+        redis.execute(incrScript, List.of(cntKey, "counter:rebuild:dedup:" + eventId),
+                String.valueOf(CounterSchema.SCHEMA_LEN),
+                String.valueOf(CounterSchema.FIELD_SIZE),
+                String.valueOf(evt.getIdx()),
+                String.valueOf(evt.getDelta()),
+                String.valueOf(7 * 24 * 3600));
+        ack.acknowledge();
     }
 
     // 复用与聚合消费者一致的原子计数折叠脚本
     private static final String INCR_FIELD_LUA = """
             
             local cntKey = KEYS[1]
+            if redis.call('SETNX', KEYS[2], '1') == 0 then return 0 end
+            redis.call('EXPIRE', KEYS[2], tonumber(ARGV[5]))
             local schemaLen = tonumber(ARGV[1])
             local fieldSize = tonumber(ARGV[2]) -- 固定为4
             local idx = tonumber(ARGV[3])
@@ -76,7 +87,9 @@ public class CounterRebuildConsumer {
             end
             
             local cnt = redis.call('GET', cntKey)
-            if not cnt then cnt = string.rep(string.char(0), schemaLen * fieldSize) end
+            if not cnt or string.len(cnt) ~= schemaLen * fieldSize then
+              cnt = string.rep(string.char(0), schemaLen * fieldSize)
+            end
             local off = idx * fieldSize
             local v = read32be(cnt, off) + delta
             if v < 0 then v = 0 end

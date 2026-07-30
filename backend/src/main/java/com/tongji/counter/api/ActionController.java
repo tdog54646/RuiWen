@@ -3,6 +3,10 @@ package com.tongji.counter.api;
 import com.tongji.auth.token.JwtService;
 import com.tongji.counter.api.dto.ActionRequest;
 import com.tongji.counter.service.CounterService;
+import com.tongji.auth.exception.BusinessException;
+import com.tongji.auth.exception.ErrorCode;
+import com.tongji.knowpost.mapper.KnowPostMapper;
+import com.tongji.knowpost.model.KnowPost;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -25,10 +29,12 @@ public class ActionController {
 
     private final CounterService counterService;
     private final JwtService jwtService;
+    private final KnowPostMapper knowPostMapper;
 
-    public ActionController(CounterService counterService, JwtService jwtService) {
+    public ActionController(CounterService counterService, JwtService jwtService, KnowPostMapper knowPostMapper) {
         this.counterService = counterService;
         this.jwtService = jwtService;
+        this.knowPostMapper = knowPostMapper;
     }
 
     /**
@@ -38,6 +44,7 @@ public class ActionController {
     public ResponseEntity<Map<String, Object>> like(@Valid @RequestBody ActionRequest req,
                                                     @AuthenticationPrincipal Jwt jwt) {
         long uid = jwtService.extractUserId(jwt);
+        validateEntity(req, uid);
         boolean changed = counterService.like(req.getEntityType(), req.getEntityId(), uid);
         return ResponseEntity.ok(Map.of(
                 "changed", changed, // 标识这次操作是否改变状态（避免重复点击）
@@ -52,6 +59,7 @@ public class ActionController {
     public ResponseEntity<Map<String, Object>> unlike(@Valid @RequestBody ActionRequest req,
                                                       @AuthenticationPrincipal Jwt jwt) {
         long uid = jwtService.extractUserId(jwt);
+        validateEntity(req, uid);
         boolean changed = counterService.unlike(req.getEntityType(), req.getEntityId(), uid);
         return ResponseEntity.ok(Map.of(
                 "changed", changed, // 状态是否发生变化
@@ -66,6 +74,7 @@ public class ActionController {
     public ResponseEntity<Map<String, Object>> fav(@Valid @RequestBody ActionRequest req,
                                                    @AuthenticationPrincipal Jwt jwt) {
         long uid = jwtService.extractUserId(jwt);
+        validateEntity(req, uid);
         boolean changed = counterService.fav(req.getEntityType(), req.getEntityId(), uid);
         return ResponseEntity.ok(Map.of(
                 "changed", changed, // 状态是否发生变化
@@ -80,10 +89,27 @@ public class ActionController {
     public ResponseEntity<Map<String, Object>> unfav(@Valid @RequestBody ActionRequest req,
                                                      @AuthenticationPrincipal Jwt jwt) {
         long uid = jwtService.extractUserId(jwt);
+        validateEntity(req, uid);
         boolean changed = counterService.unfav(req.getEntityType(), req.getEntityId(), uid);
         return ResponseEntity.ok(Map.of(
                 "changed", changed, // 状态是否发生变化
                 "faved", counterService.isFaved(req.getEntityType(), req.getEntityId(), uid)
         ));
+    }
+
+    private void validateEntity(ActionRequest request, long userId) {
+        final long postId;
+        try {
+            postId = Long.parseLong(request.getEntityId());
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "实体 ID 格式非法");
+        }
+        KnowPost post = knowPostMapper.findById(postId);
+        if (post == null || !"published".equals(post.getStatus())) {
+            throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND, "内容不存在");
+        }
+        if (!"public".equals(post.getVisible()) && !Long.valueOf(userId).equals(post.getCreatorId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限操作该内容");
+        }
     }
 }

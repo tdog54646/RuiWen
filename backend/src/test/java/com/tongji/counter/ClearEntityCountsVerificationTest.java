@@ -1,6 +1,7 @@
 package com.tongji.counter;
 
 import com.tongji.counter.event.CounterEventProducer;
+import com.tongji.cache.RedisKeyScanner;
 import com.tongji.counter.schema.BitmapShard;
 import com.tongji.counter.schema.CounterKeys;
 import com.tongji.counter.service.impl.CounterServiceImpl;
@@ -65,7 +66,7 @@ class ClearEntityCountsVerificationTest {
 
         counterService = new CounterServiceImpl(
                 redis, mock(CounterEventProducer.class),
-                mock(ApplicationEventPublisher.class), mock(RedissonClient.class));
+                mock(ApplicationEventPublisher.class), mock(RedissonClient.class), new RedisKeyScanner(redis));
         userCounterService = new UserCounterServiceImpl(
                 redis, mock(KnowPostMapper.class), counterService, mock(RelationMapper.class));
     }

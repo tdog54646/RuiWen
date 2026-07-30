@@ -13,6 +13,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 public class CounterEvent {
+    private String eventId;
     private String entityType;
     private String entityId;
     private String metric; // like | fav（指标名称）
@@ -21,6 +22,7 @@ public class CounterEvent {
     private int delta; // +1 / -1
 
     public CounterEvent(String entityType, String entityId, String metric, int idx, long userId, int delta) {
+        this.eventId = java.util.UUID.randomUUID().toString();
         this.entityType = entityType;
         this.entityId = entityId;
         this.metric = metric;

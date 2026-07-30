@@ -1,6 +1,7 @@
 package com.tongji.counter.service.impl;
 
 import com.tongji.counter.event.CounterEvent;
+import com.tongji.cache.RedisKeyScanner;
 import com.tongji.counter.event.CounterEventProducer;
 import com.tongji.counter.schema.BitmapShard;
 import com.tongji.counter.schema.CounterKeys;
@@ -13,6 +14,8 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -36,6 +39,8 @@ public class CounterServiceImpl implements CounterService {
     private final CounterEventProducer eventProducer;
     private final ApplicationEventPublisher eventPublisher;
     private final RedissonClient redisson;
+    private final RedisKeyScanner keyScanner;
+    private static final Logger log = LoggerFactory.getLogger(CounterServiceImpl.class);
     @Value("${counter.rebuild.lock.ttl-ms:5000}")
     private long lockTtlMs;
     @Value("${counter.rebuild.rate.permits:3}")
@@ -47,11 +52,14 @@ public class CounterServiceImpl implements CounterService {
     @Value("${counter.rebuild.backoff.max-ms:30000}")
     private long backoffMaxMs;
 
-    public CounterServiceImpl(StringRedisTemplate redis, CounterEventProducer eventProducer, ApplicationEventPublisher eventPublisher, RedissonClient redisson) {
+    public CounterServiceImpl(StringRedisTemplate redis, CounterEventProducer eventProducer,
+                              ApplicationEventPublisher eventPublisher, RedissonClient redisson,
+                              RedisKeyScanner keyScanner) {
         this.redis = redis;
         this.eventProducer = eventProducer;
         this.eventPublisher = eventPublisher;
         this.redisson = redisson;
+        this.keyScanner = keyScanner;
         this.toggleScript = new DefaultRedisScript<>();
         this.toggleScript.setResultType(Long.class);
         // 位图状态原子切换，仅在状态变化时返回 1
@@ -111,16 +119,23 @@ public class CounterServiceImpl implements CounterService {
         // 分片内位偏移
         long bit = BitmapShard.bitOf(uid);
         String bmKey = CounterKeys.bitmapKey(metric, etype, eid, chunk);
-        List<String> keys = List.of(bmKey);
-        List<String> args = List.of(String.valueOf(bit), add ? "add" : "remove");
+        CounterEvent event = CounterEvent.of(etype, eid, metric, idx, uid, add ? 1 : -1);
+        String payload = eventProducer.serialize(event);
+        List<String> keys = List.of(bmKey, CounterEventProducer.OUTBOX_KEY);
+        List<String> args = List.of(String.valueOf(bit), add ? "add" : "remove",
+                event.getEventId(), payload);
         Long changed = redis.execute(toggleScript, keys, args.toArray());
         boolean ok = changed == 1L;
         if (ok) {
-            int delta = add ? 1 : -1;
-            // 产出计数事件（异步聚合），分区按实体维度保证同实体事件顺序
-            eventProducer.publish(CounterEvent.of(etype, eid, metric, idx, uid, delta));
+            try {
+                eventProducer.publish(event);
+                redis.opsForHash().delete(CounterEventProducer.OUTBOX_KEY, event.getEventId());
+            } catch (RuntimeException publishError) {
+                // 位图与 Redis Outbox 已原子持久化，后台 relay 会继续补投，不能回滚事实位。
+                log.warn("Counter event queued for relay, eventId={}", event.getEventId(), publishError);
+            }
             // 本地事件：触发缓存失效/旁路更新等快速路径
-            eventPublisher.publishEvent(CounterEvent.of(etype, eid, metric, idx, uid, delta));
+            eventPublisher.publishEvent(event);
         }
         return ok;
     }
@@ -313,7 +328,7 @@ public class CounterServiceImpl implements CounterService {
      * 说明：当前使用 KEYS 枚举分片（与读取路径一致），生产建议维护索引集合替代。
      */
     private void deleteBitmapShards(String metric, String etype, String eid) {
-        Set<String> keys = redis.keys(String.format("bm:%s:%s:%s:*", metric, etype, eid));
+        Set<String> keys = keyScanner.scan(String.format("bm:%s:%s:%s:*", metric, etype, eid));
         if (keys != null && !keys.isEmpty()) {
             redis.delete(keys);
         }
@@ -460,7 +475,7 @@ public class CounterServiceImpl implements CounterService {
     private long bitCountShardsPipelined(String metric, String etype, String eid) {
         String pattern = String.format("bm:%s:%s:%s:*", metric, etype, eid);
         // 生产环境建议以索引集合替代 KEYS
-        Set<String> keys = redis.keys(pattern); 
+        Set<String> keys = keyScanner.scan(pattern);
         if (keys.isEmpty()) return 0L;
 
         // 管道批量 BITCOUNT 汇总
@@ -489,12 +504,15 @@ public class CounterServiceImpl implements CounterService {
             if op == 'add' then
               if prev == 1 then return 0 end
               redis.call('SETBIT', bmKey, offset, 1)
+              redis.call('HSET', KEYS[2], ARGV[3], ARGV[4])
               return 1
             elseif op == 'remove' then
               if prev == 0 then return 0 end
               redis.call('SETBIT', bmKey, offset, 0)
+              redis.call('HSET', KEYS[2], ARGV[3], ARGV[4])
               return 1
             end
             return -1
             """;
+
 }
