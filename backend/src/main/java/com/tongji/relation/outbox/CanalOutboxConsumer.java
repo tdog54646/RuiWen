@@ -49,7 +49,7 @@ public class CanalOutboxConsumer {
             for (JsonNode row : rows) {
                 JsonNode payloadNode = row.get("payload");
                 if (payloadNode == null) {
-                    continue;
+                    throw new IllegalArgumentException("outbox 行缺少 payload");
                 }
 
                 JsonNode payload = objectMapper.readTree(payloadNode.asText());
@@ -60,7 +60,7 @@ public class CanalOutboxConsumer {
                     }
                     JsonNode data = payload.get("data");
                     if (data == null || data.isNull()) {
-                        continue;
+                        throw new IllegalArgumentException("following outbox payload 缺少 data");
                     }
                     evt = objectMapper.treeToValue(data, RelationEvent.class);
                 } else {

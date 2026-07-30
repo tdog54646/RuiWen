@@ -17,6 +17,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Canal→Kafka 桥接器。
@@ -36,9 +37,11 @@ public class CanalKafkaBridge implements SmartLifecycle {
     private final String filter;
     private final int batchSize;
     private final long intervalMs;
+    private final long reconnectBackoffMs;
+    private final long kafkaSendTimeoutSeconds;
     private volatile boolean running;
     private final TaskExecutor taskExecutor;
-    private CanalConnector connector;
+    private volatile CanalConnector connector;
     private static final Logger log = LoggerFactory.getLogger(CanalKafkaBridge.class);
 
     /**
@@ -66,7 +69,9 @@ public class CanalKafkaBridge implements SmartLifecycle {
                             @Value("${canal.password}") String password,
                             @Value("${canal.filter}") String filter,
                             @Value("${canal.batchSize}") int batchSize,
-                            @Value("${canal.intervalMs}") long intervalMs) {
+                            @Value("${canal.intervalMs}") long intervalMs,
+                            @Value("${canal.reconnect-backoff-ms:5000}") long reconnectBackoffMs,
+                            @Value("${canal.kafka-send-timeout-seconds:30}") long kafkaSendTimeoutSeconds) {
         this.kafka = kafka;
         this.objectMapper = objectMapper;
         this.taskExecutor = taskExecutor;
@@ -79,6 +84,8 @@ public class CanalKafkaBridge implements SmartLifecycle {
         this.filter = filter;
         this.batchSize = batchSize;
         this.intervalMs = intervalMs;
+        this.reconnectBackoffMs = reconnectBackoffMs;
+        this.kafkaSendTimeoutSeconds = kafkaSendTimeoutSeconds;
     }
 
     /**
@@ -86,94 +93,119 @@ public class CanalKafkaBridge implements SmartLifecycle {
      */
     @Override
     public void start() {
+        if (!enabled) {
+            log.info("Canal bridge disabled");
+            return;
+        }
         if (running) {
             log.info("Canal bridge start skipped: running={} enabled={} host={} port={} dest={} filter={}", running, enabled, host, port, destination, filter);
             return;
         }
-        // 标记运行并使用全局线程池异步执行主循环
         running = true;
-        taskExecutor.execute(() -> {
-            try {
-                // 创建 Canal 单实例连接器并建立连接
-                connector = CanalConnectors.newSingleConnector(new InetSocketAddress(host, port), destination, username, password);
-                log.info("Canal connecting to {}:{} dest={} user={} filter={}", host, port, destination, username, filter);
-                connector.connect();
-                // 订阅过滤表达式，仅拉取关心的表（如 outbox）
-                connector.subscribe(filter);
-                // 回滚到上次确认位点，保证一致性处理
-                connector.rollback();
-                log.info("Canal connected and subscribed: host={} port={} dest={} filter={} batchSize={} intervalMs={}ms", host, port, destination, filter, batchSize, intervalMs);
-                while (running) {
-                    // 拉取一批未确认消息（不自动 ack）
-                    Message message = connector.getWithoutAck(batchSize);
-                    long batchId = message.getId();
-                    // 空批次或心跳时，按间隔休眠并继续轮询
-                    if (batchId == -1 || message.getEntries() == null || message.getEntries().isEmpty()) {
-                        try {
-                            Thread.sleep(intervalMs);
-                        } catch (InterruptedException ignored) {}
-                        continue;
+        taskExecutor.execute(this::runLoop);
+    }
+
+    private void runLoop() {
+        try {
+            while (running) {
+                CanalConnector current = null;
+                try {
+                    current = CanalConnectors.newSingleConnector(
+                            new InetSocketAddress(host, port), destination, username, password);
+                    connector = current;
+                    log.info("Canal connecting to {}:{} dest={} filter={}", host, port, destination, filter);
+                    current.connect();
+                    current.subscribe(filter);
+                    current.rollback();
+                    log.info("Canal connected and subscribed: host={} port={} dest={} filter={} batchSize={} intervalMs={}ms",
+                            host, port, destination, filter, batchSize, intervalMs);
+                    consumeConnected(current);
+                } catch (Exception e) {
+                    if (running) {
+                        log.warn("Canal bridge disconnected; retrying in {}ms: {}", reconnectBackoffMs, e.getMessage(), e);
                     }
-                    for (CanalEntry.Entry entry : message.getEntries()) {
-                        // 仅处理行级数据变更事件
-                        if (entry.getEntryType() != CanalEntry.EntryType.ROWDATA) {
-                            continue;
-                        }
-                        CanalEntry.RowChange rowChange;
-
-                        try {
-                            // 解析二进制为 RowChange（包含 INSERT/UPDATE 的行变更）
-                            rowChange = CanalEntry.RowChange.parseFrom(entry.getStoreValue());
-                        } catch (Exception e) {
-                            continue;
-                        }
-
-                        CanalEntry.EventType eventType = rowChange.getEventType();
-                        // 仅转发 INSERT/UPDATE 事件，忽略其他类型
-                        if (eventType != CanalEntry.EventType.INSERT && eventType != CanalEntry.EventType.UPDATE) {
-                            continue;
-                        }
-                        ArrayNode dataArray = objectMapper.createArrayNode();
-
-                        for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
-                            ObjectNode rowNode = objectMapper.createObjectNode();
-                            for (CanalEntry.Column col : rowData.getAfterColumnsList()) {
-                                // 提取 payload 字段值（JSON 字符串），供下游消费
-                                if ("payload".equalsIgnoreCase(col.getName())) {
-                                    rowNode.put("payload", col.getValue());
-                                }
-                            }
-                            dataArray.add(rowNode);
-                        }
-
-                        ObjectNode msgNode = objectMapper.createObjectNode();
-                        msgNode.put("table", entry.getHeader().getTableName());
-                        msgNode.put("type", eventType == CanalEntry.EventType.INSERT ? "INSERT" : "UPDATE");
-                        msgNode.set("data", dataArray);
-
-                        try {
-                            // 序列化并发送到 Kafka 主题（canal-outbox）
-                            String json = objectMapper.writeValueAsString(msgNode);
-                            kafka.send(OutboxTopics.CANAL_OUTBOX, json);
-                        } catch (Exception ignored) {}
-                    }
-                    // 批次确认（推进位点），避免消息重放
-                    connector.ack(batchId);
+                } finally {
+                    disconnect(current);
+                    if (connector == current) connector = null;
                 }
+                if (running) sleep(reconnectBackoffMs);
+            }
+        } finally {
+            running = false;
+            connector = null;
+        }
+    }
+
+    private void consumeConnected(CanalConnector current) throws Exception {
+        while (running) {
+            Message message = current.getWithoutAck(batchSize);
+            long batchId = message.getId();
+            if (batchId == -1 || message.getEntries() == null || message.getEntries().isEmpty()) {
+                sleep(intervalMs);
+                continue;
+            }
+            try {
+                forwardEntries(message);
+                current.ack(batchId);
             } catch (Exception e) {
-                log.error("Canal bridge error", e);
-            } finally {
-                if (connector != null) {
-                    // 断开 Canal 连接（资源清理）
-                    try {
-                        connector.disconnect();
-                        log.info("Canal disconnected: dest={}", destination);
-                    } catch (Exception ex) {
-                        log.warn("Canal disconnect failed: dest={} err={}", destination, ex.getMessage());
+                try {
+                    current.rollback(batchId);
+                } catch (Exception rollbackError) {
+                    e.addSuppressed(rollbackError);
+                }
+                throw e;
+            }
+        }
+    }
+
+    void forwardEntries(Message message) throws Exception {
+        for (CanalEntry.Entry entry : message.getEntries()) {
+            if (entry.getEntryType() != CanalEntry.EntryType.ROWDATA) continue;
+            CanalEntry.RowChange rowChange = CanalEntry.RowChange.parseFrom(entry.getStoreValue());
+            CanalEntry.EventType eventType = rowChange.getEventType();
+            if (eventType != CanalEntry.EventType.INSERT && eventType != CanalEntry.EventType.UPDATE) continue;
+
+            ArrayNode dataArray = objectMapper.createArrayNode();
+            for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
+                for (CanalEntry.Column col : rowData.getAfterColumnsList()) {
+                    if ("payload".equalsIgnoreCase(col.getName())) {
+                        ObjectNode rowNode = objectMapper.createObjectNode();
+                        rowNode.put("payload", col.getValue());
+                        dataArray.add(rowNode);
+                        break;
                     }
                 }
             }
-        });
+            if (dataArray.isEmpty()) continue;
+
+            String table = entry.getHeader().getTableName();
+            ObjectNode msgNode = objectMapper.createObjectNode();
+            msgNode.put("table", table);
+            msgNode.put("type", eventType == CanalEntry.EventType.INSERT ? "INSERT" : "UPDATE");
+            msgNode.set("data", dataArray);
+            String json = objectMapper.writeValueAsString(msgNode);
+            kafka.send(OutboxTopics.CANAL_OUTBOX, table, json)
+                    .get(kafkaSendTimeoutSeconds, TimeUnit.SECONDS);
+        }
+    }
+
+    private void sleep(long millis) {
+        try {
+            Thread.sleep(Math.max(1L, millis));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (running) throw new IllegalStateException("Canal bridge thread interrupted", e);
+        }
+    }
+
+    private void disconnect(CanalConnector current) {
+        if (current == null) return;
+        try {
+            current.disconnect();
+            log.info("Canal disconnected: dest={}", destination);
+        } catch (Exception ex) {
+            log.warn("Canal disconnect failed: dest={} err={}", destination, ex.getMessage());
+        }
     }
 
     /**
@@ -182,6 +214,7 @@ public class CanalKafkaBridge implements SmartLifecycle {
     @Override
     public void stop() {
         running = false;
+        disconnect(connector);
     }
 
     /**

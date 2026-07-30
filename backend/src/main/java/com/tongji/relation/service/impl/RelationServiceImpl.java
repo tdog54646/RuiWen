@@ -1,21 +1,19 @@
 package com.tongji.relation.service.impl;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.tongji.profile.api.dto.ProfileResponse;
+import com.tongji.auth.exception.BusinessException;
+import com.tongji.auth.exception.ErrorCode;
 import com.tongji.relation.event.RelationEvent;
 import com.tongji.relation.mapper.RelationMapper;
 import com.tongji.relation.outbox.OutboxService;
 import com.tongji.relation.service.RelationService;
 import com.tongji.user.domain.User;
 import com.tongji.user.mapper.UserMapper;
-import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.*;
@@ -36,8 +34,6 @@ public class RelationServiceImpl implements RelationService {
     private final OutboxService outboxService;
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> tokenScript;
-    private final Cache<Long, List<Long>> flwsTopCache;
-    private final Cache<Long, List<Long>> fansTopCache;
     private final UserMapper userMapper;
     
 
@@ -57,8 +53,6 @@ public class RelationServiceImpl implements RelationService {
         this.tokenScript = new DefaultRedisScript<>();
         this.tokenScript.setResultType(Long.class);
         this.tokenScript.setScriptText(TOKEN_BUCKET_LUA);
-        this.flwsTopCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(10)).build();
-        this.fansTopCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(10)).build();
         this.userMapper = userMapper;
     }
 
@@ -71,21 +65,25 @@ public class RelationServiceImpl implements RelationService {
     @Override
     @Transactional
     public boolean follow(long fromUserId, long toUserId) {
+        validateRelationTarget(fromUserId, toUserId);
         // Lua 脚本令牌桶限流
         Long ok = redis.execute(tokenScript, List.of("rl:follow:" + fromUserId), "100", "1");
         if (ok == null || ok == 0L) {
             return false;
         }
 
-        long id = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
+        long id = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
         int inserted = mapper.insertFollowing(id, fromUserId, toUserId, 1);
 
         if (inserted > 0) {
-            try {
-                outboxService.insert("following", id, "FollowCreated",
-                        new RelationEvent("FollowCreated", fromUserId, toUserId, id));
-            } catch (Exception ignored) {}
-
+            Long relationId = mapper.findFollowingId(fromUserId, toUserId);
+            if (relationId == null) {
+                throw new IllegalStateException("关注关系写入后无法读取");
+            }
+            long occurredAt = System.currentTimeMillis();
+            outboxService.insert("following", relationId, "FollowCreated",
+                    new RelationEvent("FollowCreated", fromUserId, toUserId, relationId,
+                            UUID.randomUUID().toString(), occurredAt));
             return true;
         }
         return false;
@@ -100,15 +98,29 @@ public class RelationServiceImpl implements RelationService {
     @Override
     @Transactional
     public boolean unfollow(long fromUserId, long toUserId) {
+        validateRelationTarget(fromUserId, toUserId);
+        Long relationId = mapper.findFollowingId(fromUserId, toUserId);
         int updated = mapper.cancelFollowing(fromUserId, toUserId);
         if (updated > 0) {
-            try {
-                outboxService.insert("following", null, "FollowCanceled",
-                        new RelationEvent("FollowCanceled", fromUserId, toUserId, null));
-            } catch (Exception ignored) {}
+            if (relationId == null) {
+                throw new IllegalStateException("取消关注时关系主键缺失");
+            }
+            long occurredAt = System.currentTimeMillis();
+            outboxService.insert("following", relationId, "FollowCanceled",
+                    new RelationEvent("FollowCanceled", fromUserId, toUserId, relationId,
+                            UUID.randomUUID().toString(), occurredAt));
             return true;
         }
         return false;
+    }
+
+    private void validateRelationTarget(long fromUserId, long toUserId) {
+        if (fromUserId == toUserId) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不能关注自己");
+        }
+        if (userMapper.findById(toUserId) == null) {
+            throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND, "目标用户不存在");
+        }
     }
 
     /**
@@ -138,9 +150,7 @@ public class RelationServiceImpl implements RelationService {
                 limit,
                 need -> mapper.listFollowingRows(userId, need, 0),
                 "toUserId",
-                "createdAt",
-                flwsTopCache,
-                userId
+                "createdAt"
         );
     }
 
@@ -160,9 +170,7 @@ public class RelationServiceImpl implements RelationService {
                 limit,
                 need -> mapper.listFollowerRows(userId, need, 0),
                 "fromUserId",
-                "createdAt",
-                fansTopCache,
-                userId
+                "createdAt"
         );
     }
 
@@ -256,21 +264,7 @@ public class RelationServiceImpl implements RelationService {
     }
 
     /**
-     * 判断是否为大V（基于 followers 计数阈值）。
-     * @param userId 用户ID
-     * @return 是否为大V
-     */
-    private boolean isBigV(long userId) {
-        byte[] raw = redis.execute((RedisCallback<byte[]>) c -> c.stringCommands().get(("ucnt:" + userId).getBytes(StandardCharsets.UTF_8)));
-        if (raw == null || raw.length < 20) return false;
-        long n = 0;
-        int off = 2 * 4;
-        for (int i = 0; i < 4; i++) n = (n << 8) | (raw[off + i] & 0xFFL);
-        return n >= 500_000L;
-    }
-
-    /**
-     * 偏移分页读取：优先命中 ZSet，未命中时从 DB 回填并设置 TTL；大V用户维护本地 Top 缓存以降低冷启动开销。
+     * 偏移分页读取：优先命中 ZSet，未命中时从 DB 回填并设置 TTL。
      */
     private List<Long> getListWithOffset(
             String key,
@@ -278,20 +272,11 @@ public class RelationServiceImpl implements RelationService {
             int limit,
             IntFunction<Map<Long, Map<String, Object>>> rowsFetcher,
             String idField,
-            String tsField,
-            Cache<Long, List<Long>> localCache,
-            long userId
+            String tsField
     ) {
         Set<String> cached = redis.opsForZSet().reverseRange(key, offset, offset + limit - 1L);
         if (cached != null && !cached.isEmpty()) {
             return toLongList(cached);
-        }
-
-        List<Long> top = localCache != null ? localCache.getIfPresent(userId) : null;
-        if (top != null && !top.isEmpty()) {
-            int from = Math.min(offset, top.size());
-            int to = Math.min(offset + limit, top.size());
-            return new ArrayList<>(top.subList(from, to));
         }
 
         int need = Math.max(1, limit + offset);
@@ -299,10 +284,6 @@ public class RelationServiceImpl implements RelationService {
         if (rows != null && !rows.isEmpty()) {
             fillZSet(key, rows, idField, tsField, null);
             redis.expire(key, Duration.ofHours(2));
-
-            if (localCache != null && isBigV(userId)) {
-                maybeUpdateTopCache(userId, key, localCache);
-            }
 
             Set<String> filled = redis.opsForZSet().reverseRange(key, offset, offset + limit - 1L);
             return filled == null ? Collections.emptyList() : toLongList(filled);
@@ -374,17 +355,6 @@ public class RelationServiceImpl implements RelationService {
         List<Long> out = new ArrayList<>(set.size());
         for (String s : set) out.add(Long.valueOf(s));
         return out;
-    }
-
-    /**
-     * 更新本地 Top 缓存：大V 用户仅缓存前 500 名，减少频繁回源与排序成本。
-     */
-    private void maybeUpdateTopCache(long userId, String key, Cache<Long, List<Long>> cache) {
-        Set<String> allSet = redis.opsForZSet().reverseRange(key, 0, 499);
-        if (allSet == null || allSet.isEmpty()) return;
-        List<Long> all = new ArrayList<>(allSet.size());
-        for (String s : allSet) all.add(Long.valueOf(s));
-        cache.put(userId, all);
     }
 
     private static final String TOKEN_BUCKET_LUA = """

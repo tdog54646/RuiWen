@@ -4,21 +4,39 @@
     <insert id="insertFollowing">
         INSERT INTO following (id, from_user_id, to_user_id, rel_status, created_at, updated_at)
         VALUES (#{id}, #{fromUserId}, #{toUserId}, #{relStatus}, NOW(3), NOW(3))
-        ON DUPLICATE KEY UPDATE rel_status=VALUES(rel_status), updated_at=VALUES(updated_at)
+        ON DUPLICATE KEY UPDATE
+            updated_at=IF(rel_status=VALUES(rel_status), updated_at, VALUES(updated_at)),
+            created_at=IF(rel_status=VALUES(rel_status), created_at, VALUES(created_at)),
+            rel_status=VALUES(rel_status)
     </insert>
     <update id="cancelFollowing">
         UPDATE following SET rel_status=0, updated_at=NOW(3)
-        WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId}
+        WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId} AND rel_status=1
     </update>
+
+    <select id="findFollowingId" resultType="java.lang.Long">
+        SELECT id FROM following
+        WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId}
+        LIMIT 1
+    </select>
+
+    <select id="findFollowingUpdatedAt" resultType="java.sql.Timestamp">
+        SELECT updated_at FROM following
+        WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId}
+        LIMIT 1
+    </select>
 
     <insert id="insertFollower">
         INSERT INTO follower (id, to_user_id, from_user_id, rel_status, created_at, updated_at)
         VALUES (#{id}, #{toUserId}, #{fromUserId}, #{relStatus}, NOW(3), NOW(3))
-        ON DUPLICATE KEY UPDATE rel_status=VALUES(rel_status), updated_at=VALUES(updated_at)
+        ON DUPLICATE KEY UPDATE
+            updated_at=IF(rel_status=VALUES(rel_status), updated_at, VALUES(updated_at)),
+            created_at=IF(rel_status=VALUES(rel_status), created_at, VALUES(created_at)),
+            rel_status=VALUES(rel_status)
     </insert>
     <update id="cancelFollower">
         UPDATE follower SET rel_status=0, updated_at=NOW(3)
-        WHERE to_user_id=#{toUserId} AND from_user_id=#{fromUserId}
+        WHERE to_user_id=#{toUserId} AND from_user_id=#{fromUserId} AND rel_status=1
     </update>
 
     <select id="existsFollowing" resultType="int">
@@ -57,4 +75,3 @@
         SELECT COUNT(1) FROM follower WHERE to_user_id=#{toUserId} AND rel_status=1
     </select>
 </mapper>
-

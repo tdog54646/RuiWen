@@ -26,6 +26,7 @@ import java.util.Map;
 public class UserCounterServiceImpl implements UserCounterService {
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> incrScript;
+    private final DefaultRedisScript<Long> setFieldScript;
     private final KnowPostMapper knowPostMapper;
     private final CounterService counterService;
     private final RelationMapper relationMapper;
@@ -42,6 +43,9 @@ public class UserCounterServiceImpl implements UserCounterService {
         this.incrScript.setResultType(Long.class);
         // 用户维度计数原子折叠（1 基坐标）
         this.incrScript.setScriptText(INCR_FIELD_LUA);
+        this.setFieldScript = new DefaultRedisScript<>();
+        this.setFieldScript.setResultType(Long.class);
+        this.setFieldScript.setScriptText(SET_FIELD_LUA);
     }
 
     /** 增量更新关注数 */
@@ -77,6 +81,16 @@ public class UserCounterServiceImpl implements UserCounterService {
     public void incrementFavsReceived(long userId, int delta) {
         String key = UserCounterKeys.sdsKey(userId);
         redis.execute(incrScript, List.of(key), "5", "4", "5", String.valueOf(delta));
+    }
+
+    @Override
+    public void syncRelationshipCounts(long fromUserId, long toUserId) {
+        long followings = relationMapper.countFollowingActive(fromUserId);
+        long followers = relationMapper.countFollowerActive(toUserId);
+        redis.execute(setFieldScript, List.of(UserCounterKeys.sdsKey(fromUserId)),
+                "5", "4", "1", String.valueOf(followings));
+        redis.execute(setFieldScript, List.of(UserCounterKeys.sdsKey(toUserId)),
+                "5", "4", "2", String.valueOf(followers));
     }
 
     /** 基于事实重建全部用户维度计数 */
@@ -152,6 +166,28 @@ public class UserCounterServiceImpl implements UserCounterService {
             return 1
             """;
 
+    private static final String SET_FIELD_LUA = """
+            local cntKey = KEYS[1]
+            local schemaLen = tonumber(ARGV[1])
+            local fieldSize = tonumber(ARGV[2])
+            local idx = tonumber(ARGV[3])
+            local value = tonumber(ARGV[4])
+            local function write32be(n)
+              local t = {}
+              for i=4,1,-1 do t[i] = n % 256; n = math.floor(n/256) end
+              return string.char(unpack(t))
+            end
+            local cnt = redis.call('GET', cntKey)
+            if not cnt or string.len(cnt) ~= schemaLen * fieldSize then
+              cnt = string.rep(string.char(0), schemaLen * fieldSize)
+            end
+            local off = (idx - 1) * fieldSize
+            local bounded = math.max(0, math.min(value, 4294967295))
+            cnt = string.sub(cnt, 1, off) .. write32be(bounded) .. string.sub(cnt, off + fieldSize + 1)
+            redis.call('SET', cntKey, cnt)
+            return bounded
+            """;
+
     private static long read32be(byte[] buf, int off) {
         if (buf == null || buf.length < off + 4) return 0L;
         long n = 0L;
@@ -167,4 +203,3 @@ public class UserCounterServiceImpl implements UserCounterService {
         buf[off + 3] = (byte) (n & 0xFF);
     }
 }
-

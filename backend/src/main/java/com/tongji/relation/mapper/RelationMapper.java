@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 import java.util.Map;
+import java.sql.Timestamp;
 
 @Mapper
 /**
@@ -34,6 +35,13 @@ public interface RelationMapper {
      */
     int cancelFollowing(@Param("fromUserId") Long fromUserId,
                         @Param("toUserId") Long toUserId);
+
+    /** 查询双方关系使用的稳定主键。 */
+    Long findFollowingId(@Param("fromUserId") Long fromUserId,
+                         @Param("toUserId") Long toUserId);
+
+    Timestamp findFollowingUpdatedAt(@Param("fromUserId") Long fromUserId,
+                                     @Param("toUserId") Long toUserId);
 
     /**
      * 插入粉丝关系。
@@ -122,4 +130,3 @@ public interface RelationMapper {
      */
     int countFollowerActive(@Param("toUserId") Long toUserId);
 }
-

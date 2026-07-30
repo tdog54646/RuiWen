@@ -16,7 +16,8 @@ public interface UserCounterService {
     void incrementLikesReceived(long userId, int delta);
     /** 增量更新获收藏数（作者维度） */
     void incrementFavsReceived(long userId, int delta);
+    /** 从关系事实表同步双方的关注/粉丝计数，重复执行结果不变。 */
+    void syncRelationshipCounts(long fromUserId, long toUserId);
     /** 基于事实重建全部计数 */
     void rebuildAllCounters(long userId);
 }
-

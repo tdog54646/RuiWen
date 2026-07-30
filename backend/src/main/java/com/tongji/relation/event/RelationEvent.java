@@ -7,10 +7,14 @@ package com.tongji.relation.event;
  * @param fromUserId 触发方用户ID
  * @param toUserId   目标方用户ID
  * @param id         关系记录ID，可为空
+ * @param eventId    单次状态迁移的唯一事件 ID
+ * @param occurredAt 事件发生时间（毫秒）
  */
 public record RelationEvent(
         String type,
         Long fromUserId,
         Long toUserId,
-        Long id) {
+        Long id,
+        String eventId,
+        Long occurredAt) {
 }

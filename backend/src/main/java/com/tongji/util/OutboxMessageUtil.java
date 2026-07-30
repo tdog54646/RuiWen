@@ -26,13 +26,16 @@ public final class OutboxMessageUtil {
 
             JsonNode data = root.get("data");
             if (data == null || !data.isArray()) {
-                return Collections.emptyList();
+                throw new IllegalArgumentException("Canal outbox data 字段缺失或不是数组");
             }
             List<JsonNode> rows = new ArrayList<>();
             data.forEach(rows::add);
             return rows;
         } catch (Exception e) {
-            return Collections.emptyList();
+            if (e instanceof IllegalArgumentException illegalArgumentException) {
+                throw illegalArgumentException;
+            }
+            throw new IllegalArgumentException("Canal outbox 消息无法解析", e);
         }
     }
 }

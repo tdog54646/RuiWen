@@ -7,6 +7,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import java.sql.Timestamp;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 /**
  * 关系事件处理器。
@@ -17,11 +21,15 @@ public class RelationEventProcessor {
     private final RelationMapper mapper;
     private final StringRedisTemplate redis;
     private final UserCounterService userCounterService;
+    private final DefaultRedisScript<Long> unlockScript;
 
     public RelationEventProcessor(RelationMapper mapper, StringRedisTemplate redis, UserCounterService userCounterService) {
         this.mapper = mapper;
         this.redis = redis;
         this.userCounterService = userCounterService;
+        this.unlockScript = new DefaultRedisScript<>();
+        this.unlockScript.setResultType(Long.class);
+        this.unlockScript.setScriptText("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end");
     }
 
     /**
@@ -29,39 +37,50 @@ public class RelationEventProcessor {
      * @param evt 关系事件
      */
     public void process(RelationEvent evt) {
-        String dk = "dedup:rel:" + evt.type() + ":" + evt.fromUserId() + ":" + evt.toUserId() + ":" + (evt.id() == null ? "0" : String.valueOf(evt.id()));
-        Boolean first = redis.opsForValue().setIfAbsent(dk, "1", Duration.ofMinutes(10));
-
-        // 非首次（存在去重键）直接返回，保证消息幂等
-        if (first == null || !first) {
+        validate(evt);
+        String eventId = evt.eventId() == null || evt.eventId().isBlank()
+                ? evt.type() + ":" + evt.fromUserId() + ":" + evt.toUserId() + ":" + evt.id()
+                : evt.eventId();
+        String doneKey = "dedup:rel:done:" + eventId;
+        if (Boolean.TRUE.equals(redis.hasKey(doneKey))) {
             return;
         }
-        if ("FollowCreated".equals(evt.type())) {
-            // 异步插入粉丝表
-            mapper.insertFollower(evt.id(), evt.toUserId(), evt.fromUserId(), 1);
-            long now = System.currentTimeMillis();
-
-            // 更新关注表与粉丝表缓存：ZSet 按时间分数维护最近项，设置短 TTL 减少陈旧数据
-            redis.opsForZSet().add("uf:flws:" + evt.fromUserId(), String.valueOf(evt.toUserId()), now);
-            redis.opsForZSet().add("uf:fans:" + evt.toUserId(), String.valueOf(evt.fromUserId()), now);
+        String lockKey = "dedup:rel:lock:" + eventId;
+        String lockToken = UUID.randomUUID().toString();
+        Boolean locked = redis.opsForValue().setIfAbsent(lockKey, lockToken, Duration.ofSeconds(30));
+        if (!Boolean.TRUE.equals(locked)) {
+            if (Boolean.TRUE.equals(redis.hasKey(doneKey))) return;
+            throw new IllegalStateException("关系事件正在处理中");
+        }
+        try {
+            if (Boolean.TRUE.equals(redis.hasKey(doneKey))) return;
+            boolean currentlyFollowing = mapper.existsFollowing(evt.fromUserId(), evt.toUserId()) > 0;
+            Timestamp updatedAt = mapper.findFollowingUpdatedAt(evt.fromUserId(), evt.toUserId());
+            long score = updatedAt == null
+                    ? (evt.occurredAt() == null ? System.currentTimeMillis() : evt.occurredAt())
+                    : updatedAt.getTime();
+            if (currentlyFollowing) {
+                mapper.insertFollower(evt.id(), evt.toUserId(), evt.fromUserId(), 1);
+                redis.opsForZSet().add("uf:flws:" + evt.fromUserId(), String.valueOf(evt.toUserId()), score);
+                redis.opsForZSet().add("uf:fans:" + evt.toUserId(), String.valueOf(evt.fromUserId()), score);
+            } else {
+                mapper.cancelFollower(evt.toUserId(), evt.fromUserId());
+                redis.opsForZSet().remove("uf:flws:" + evt.fromUserId(), String.valueOf(evt.toUserId()));
+                redis.opsForZSet().remove("uf:fans:" + evt.toUserId(), String.valueOf(evt.fromUserId()));
+            }
             redis.expire("uf:flws:" + evt.fromUserId(), Duration.ofHours(2));
             redis.expire("uf:fans:" + evt.toUserId(), Duration.ofHours(2));
+            userCounterService.syncRelationshipCounts(evt.fromUserId(), evt.toUserId());
+            redis.opsForValue().set(doneKey, "1", Duration.ofDays(7));
+        } finally {
+            redis.execute(unlockScript, List.of(lockKey), lockToken);
+        }
+    }
 
-            // 更新关注数与粉丝数
-            userCounterService.incrementFollowings(evt.fromUserId(), 1);
-            userCounterService.incrementFollowers(evt.toUserId(), 1);
-        } else if ("FollowCanceled".equals(evt.type())) {
-            mapper.cancelFollower(evt.toUserId(), evt.fromUserId());
-
-            // 更新关注表与粉丝表缓存：移除 ZSet 项并刷新 TTL
-            redis.opsForZSet().remove("uf:flws:" + evt.fromUserId(), String.valueOf(evt.toUserId()));
-            redis.opsForZSet().remove("uf:fans:" + evt.toUserId(), String.valueOf(evt.fromUserId()));
-            redis.expire("uf:flws:" + evt.fromUserId(), Duration.ofHours(2));
-            redis.expire("uf:fans:" + evt.toUserId(), Duration.ofHours(2));
-
-            // 更新关注数与粉丝数
-            userCounterService.incrementFollowings(evt.fromUserId(), -1);
-            userCounterService.incrementFollowers(evt.toUserId(), -1);
+    private void validate(RelationEvent evt) {
+        if (evt == null || evt.fromUserId() == null || evt.toUserId() == null || evt.id() == null
+                || (!"FollowCreated".equals(evt.type()) && !"FollowCanceled".equals(evt.type()))) {
+            throw new IllegalArgumentException("关系事件字段非法");
         }
     }
 }
