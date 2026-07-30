@@ -16,6 +16,7 @@ public class KnowPostDetailRow {
     private String tags;        // JSON 字符串
     private String imgUrls;     // JSON 字符串
     private String contentUrl;
+    private String contentObjectKey;
     private String contentEtag;
     private String contentSha256;
     private String authorAvatar;

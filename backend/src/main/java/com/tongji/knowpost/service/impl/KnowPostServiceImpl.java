@@ -17,7 +17,7 @@ import com.tongji.knowpost.model.KnowPostDetailRow;
 import com.tongji.knowpost.service.FeedCacheService;
 import com.tongji.knowpost.service.KnowPostService;
 import com.tongji.relation.outbox.OutboxService;
-import com.tongji.storage.config.OssProperties;
+import com.tongji.storage.OssStorageService;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -40,7 +40,7 @@ public class KnowPostServiceImpl implements KnowPostService {
     @Resource
     private final SnowflakeIdGenerator idGen;
     private final ObjectMapper objectMapper;
-    private final OssProperties ossProperties;
+    private final OssStorageService ossStorageService;
     private final FeedCacheService feedCacheService;
     private final CounterService counterService;
     private final com.tongji.counter.service.UserCounterService userCounterService;
@@ -48,7 +48,7 @@ public class KnowPostServiceImpl implements KnowPostService {
     private final HotKeyDetector hotKey;
     private final PdfExportService pdfExportService;
     private static final Logger log = LoggerFactory.getLogger(KnowPostServiceImpl.class);
-    private static final int DETAIL_LAYOUT_VER = 1;
+    private static final int DETAIL_LAYOUT_VER = 2;
     private static final java.net.http.HttpClient HTTP_CLIENT = java.net.http.HttpClient.newBuilder()
             .connectTimeout(java.time.Duration.ofSeconds(5))
             .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
@@ -82,10 +82,8 @@ public class KnowPostServiceImpl implements KnowPostService {
      */
     @Transactional
     public void confirmContent(long creatorId, long id, String objectKey, String etag, Long size, String sha256) {
-        // 缓存双删（更新前先删除）
-        feedCacheService.deleteAndPublishPublicFeedCaches();
-        feedCacheService.deleteMyFeedCaches(creatorId);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        objectKey = ossStorageService.validatePostContentObjectKey(objectKey, id);
+        ossStorageService.verifyPostContentUpload(objectKey, id, etag, size, sha256);
         KnowPost post = KnowPost.builder()
                 .id(id)
                 .creatorId(creatorId)
@@ -93,17 +91,15 @@ public class KnowPostServiceImpl implements KnowPostService {
                 .contentEtag(etag)
                 .contentSize(size)
                 .contentSha256(sha256)
-                .contentUrl(publicUrl(objectKey))
+                .contentUrl(ossStorageService.originUrl(objectKey))
+                .status("draft")
                 .updateTime(Instant.now())
                 .build();
         int updated = mapper.updateContent(post);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
-        // 更新后再次删除，避免并发下写回旧值
-        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
-        feedCacheService.doubleDeleteMy(creatorId, 200);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /**
@@ -116,10 +112,9 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (visible != null && !isValidVisible(visible)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
         }
-        feedCacheService.deleteAndPublishPublicFeedCaches();
-        feedCacheService.deleteMyFeedCaches(creatorId);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
-
+        objectKey = ossStorageService.validatePostContentObjectKey(objectKey, id);
+        ossStorageService.verifyPostContentUpload(objectKey, id, etag, size, sha256);
+        List<String> normalizedImageUrls = ossStorageService.validatePostImageUploads(imgUrls, id);
         Instant now = Instant.now();
         KnowPost contentPost = KnowPost.builder()
                 .id(id)
@@ -128,7 +123,8 @@ public class KnowPostServiceImpl implements KnowPostService {
                 .contentEtag(etag)
                 .contentSize(size)
                 .contentSha256(sha256)
-                .contentUrl(publicUrl(objectKey))
+                .contentUrl(ossStorageService.originUrl(objectKey))
+                .status("published")
                 .updateTime(now)
                 .build();
         int contentUpdated = mapper.updateContent(contentPost);
@@ -142,7 +138,7 @@ public class KnowPostServiceImpl implements KnowPostService {
                 .title(title)
                 .tagId(tagId)
                 .tags(toJsonOrNull(tags))
-                .imgUrls(toJsonOrNull(imgUrls))
+                .imgUrls(toJsonOrNull(normalizedImageUrls))
                 .visible(visible)
                 .isTop(isTop)
                 .description(description)
@@ -154,10 +150,9 @@ public class KnowPostServiceImpl implements KnowPostService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "知文不存在或无权限");
         }
         enqueueKnowPostEvent(id, "KnowPostUpdated", "update");
+        syncPostAssetAcl(id);
 
-        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
-        feedCacheService.doubleDeleteMy(creatorId, 200);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /**
@@ -168,17 +163,14 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (visible != null && !isValidVisible(visible)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
         }
-        // 缓存双删（更新前先删除）
-        feedCacheService.deleteAndPublishPublicFeedCaches();
-        feedCacheService.deleteMyFeedCaches(creatorId);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        List<String> normalizedImageUrls = ossStorageService.validatePostImageUploads(imgUrls, id);
         KnowPost post = KnowPost.builder()
                 .id(id)
                 .creatorId(creatorId)
                 .title(title)
                 .tagId(tagId)
                 .tags(toJsonOrNull(tags))
-                .imgUrls(toJsonOrNull(imgUrls))
+                .imgUrls(toJsonOrNull(normalizedImageUrls))
                 .visible(visible)
                 .isTop(isTop)
                 .description(description)
@@ -192,10 +184,8 @@ public class KnowPostServiceImpl implements KnowPostService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
         enqueueKnowPostEvent(id, "KnowPostUpdated", "update");
-        // 更新后再次删除，避免并发下写回旧值
-        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
-        feedCacheService.doubleDeleteMy(creatorId, 200);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        syncPostAssetAcl(id);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /**
@@ -203,23 +193,17 @@ public class KnowPostServiceImpl implements KnowPostService {
      */
     @Transactional
     public void publish(long creatorId, long id) {
-        // 缓存双删（更新前先删除）
-        feedCacheService.deleteAndPublishPublicFeedCaches();
-        feedCacheService.deleteMyFeedCaches(creatorId);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         int updated = mapper.publish(id, creatorId);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
         enqueueKnowPostEvent(id, "KnowPostInserted", "insert");
+        syncPostAssetAcl(id);
         try {
             userCounterService.incrementPosts(creatorId, 1);
         } catch (Exception ignored) {}
 
-        // 更新后再次删除，避免并发下写回旧值
-        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
-        feedCacheService.doubleDeleteMy(creatorId, 200);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /**
@@ -227,16 +211,11 @@ public class KnowPostServiceImpl implements KnowPostService {
      */
     @Transactional
     public void updateTop(long creatorId, long id, boolean isTop) {
-        feedCacheService.deleteAndPublishPublicFeedCaches();
-        feedCacheService.deleteMyFeedCaches(creatorId);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         int updated = mapper.updateTop(id, creatorId, isTop);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
-        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
-        feedCacheService.doubleDeleteMy(creatorId, 200);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /**
@@ -247,18 +226,14 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (!isValidVisible(visible)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
         }
-        feedCacheService.deleteAndPublishPublicFeedCaches();
-        feedCacheService.deleteMyFeedCaches(creatorId);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         int updated = mapper.updateVisibility(id, creatorId, visible);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
         String eventType = "public".equals(visible) ? "KnowPostPublic" : "KnowPostPrivate";
         enqueueKnowPostEvent(id, eventType, visible);
-        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
-        feedCacheService.doubleDeleteMy(creatorId, 200);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        syncPostAssetAcl(id);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /**
@@ -266,9 +241,6 @@ public class KnowPostServiceImpl implements KnowPostService {
      */
     @Transactional
     public void delete(long creatorId, long id) {
-        feedCacheService.deleteAndPublishPublicFeedCaches();
-        feedCacheService.deleteMyFeedCaches(creatorId);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
         int updated = mapper.softDelete(id, creatorId);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
@@ -286,9 +258,8 @@ public class KnowPostServiceImpl implements KnowPostService {
             redis.delete("feed:count:" + id);
         } catch (Exception ignored) {}
         enqueueKnowPostEvent(id, "KnowPostDeleted", "delete");
-        feedCacheService.doubleDeleteAndPublishPublicFeedCaches(200);
-        feedCacheService.doubleDeleteMy(creatorId, 200);
-        redis.delete("knowpost:detail:" + id + ":v" + DETAIL_LAYOUT_VER);
+        syncPostAssetAcl(id);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     private void enqueueKnowPostEvent(long id, String eventType, String op) {
@@ -312,14 +283,6 @@ public class KnowPostServiceImpl implements KnowPostService {
         }
     }
 
-    private String publicUrl(String objectKey) {
-        String publicDomain = ossProperties.getPublicDomain();
-        if (publicDomain != null && !publicDomain.isBlank()) {
-            return publicDomain.replaceAll("/$", "") + "/" + objectKey;
-        }
-        return "https://" + ossProperties.getBucket() + "." + ossProperties.getEndpoint() + "/" + objectKey;
-    }
-
     /**
      * 获取知文详情（含作者信息、图片列表）。
      * - 公开策略：published + public 可匿名访问；否则需作者本人访问。
@@ -335,6 +298,10 @@ public class KnowPostServiceImpl implements KnowPostService {
             }
             try {
                 KnowPostDetailResponse base = objectMapper.readValue(cached, KnowPostDetailResponse.class);
+                if (!"public".equals(base.visible())) {
+                    redis.delete(pageKey);
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限查看");
+                }
                 hotKey.record(pageKey);
                 maybeExtendTtlDetail(pageKey);
                 String cntKey = "feed:count:" + id;
@@ -380,6 +347,10 @@ public class KnowPostServiceImpl implements KnowPostService {
             if (again != null && !"NULL".equals(again)) {
                 try {
                     KnowPostDetailResponse base = objectMapper.readValue(again, KnowPostDetailResponse.class);
+                    if (!"public".equals(base.visible())) {
+                        redis.delete(pageKey);
+                        throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限查看");
+                    }
                     hotKey.record(pageKey);
                     maybeExtendTtlDetail(pageKey);
                     String cntKey = "feed:count:" + id;
@@ -427,14 +398,22 @@ public class KnowPostServiceImpl implements KnowPostService {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "内容不存在");
             }
 
-            boolean isPublic = "published".equals(row.getStatus()) && "public".equals(row.getVisible());
+            boolean isPublic = isPubliclyCacheable(row);
             boolean isOwner = currentUserIdNullable != null && row.getCreatorId() != null && currentUserIdNullable.equals(row.getCreatorId());
+            syncPostAssetAcl(row);
             if (!isPublic && !isOwner) {
                 singleFlight.remove(pageKey);
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限查看");
             }
 
             List<String> images = parseStringArray(row.getImgUrls());
+            String contentUrl = row.getContentUrl();
+            if (!isPublic) {
+                String contentReference = row.getContentObjectKey() == null
+                        ? row.getContentUrl() : row.getContentObjectKey();
+                contentUrl = ossStorageService.privateReadUrl(contentReference);
+                images = images.stream().map(ossStorageService::privateReadUrl).toList();
+            }
             List<String> tags = parseStringArray(row.getTags());
             Map<String, Long> counts = counterService.getCounts("knowpost", String.valueOf(row.getId()), List.of("like", "fav"));
             Long likeCount = counts.getOrDefault("like", 0L);
@@ -444,7 +423,7 @@ public class KnowPostServiceImpl implements KnowPostService {
                     String.valueOf(row.getId()),
                     row.getTitle(),
                     row.getDescription(),
-                    row.getContentUrl(),
+                    contentUrl,
                     images,
                     tags,
                     String.valueOf(row.getCreatorId()),
@@ -460,14 +439,16 @@ public class KnowPostServiceImpl implements KnowPostService {
                     row.getType(),
                     row.getPublishTime()
             );
-            try {
-                String json = objectMapper.writeValueAsString(resp);
-                int baseTtl = 60;
-                int jitter = java.util.concurrent.ThreadLocalRandom.current().nextInt(30);
-                int target = hotKey.ttlForPublic(baseTtl, pageKey);
-                redis.opsForValue().set(pageKey, json, java.time.Duration.ofSeconds(Math.max(target, baseTtl + jitter)));
-                log.info("detail source=db key={}", pageKey);
-            } catch (Exception ignored) {}
+            if (isPublic) {
+                try {
+                    String json = objectMapper.writeValueAsString(resp);
+                    int baseTtl = 60;
+                    int jitter = java.util.concurrent.ThreadLocalRandom.current().nextInt(30);
+                    int target = hotKey.ttlForPublic(baseTtl, pageKey);
+                    redis.opsForValue().set(pageKey, json, java.time.Duration.ofSeconds(Math.max(target, baseTtl + jitter)));
+                    log.info("detail source=db key={}", pageKey);
+                } catch (Exception ignored) {}
+            }
             boolean liked = currentUserIdNullable != null && counterService.isLiked("knowpost", String.valueOf(row.getId()), currentUserIdNullable);
             boolean faved = currentUserIdNullable != null && counterService.isFaved("knowpost", String.valueOf(row.getId()), currentUserIdNullable);
             singleFlight.remove(pageKey);
@@ -501,6 +482,32 @@ public class KnowPostServiceImpl implements KnowPostService {
         if (currentTtl < target) {
             redis.expire(key, java.time.Duration.ofSeconds(target));
         }
+    }
+
+    private void syncPostAssetAcl(long id) {
+        KnowPostDetailRow row = mapper.findDetailById(id);
+        if (row != null) {
+            syncPostAssetAcl(row);
+        }
+    }
+
+    private void syncPostAssetAcl(KnowPostDetailRow row) {
+        if (!ossStorageService.isConfigured()) {
+            return;
+        }
+        boolean publicRead = "published".equals(row.getStatus()) && "public".equals(row.getVisible());
+        String contentReference = row.getContentObjectKey() == null
+                ? row.getContentUrl() : row.getContentObjectKey();
+        ossStorageService.setPostAssetsAccess(
+                contentReference,
+                parseStringArray(row.getImgUrls()),
+                publicRead);
+    }
+
+    static boolean isPubliclyCacheable(KnowPostDetailRow row) {
+        return row != null
+                && "published".equals(row.getStatus())
+                && "public".equals(row.getVisible());
     }
 
     /**

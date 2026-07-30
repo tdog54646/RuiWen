@@ -29,6 +29,11 @@ public interface KnowPostMapper {
                                                                               @Param("limit") int limit,
                                                                               @Param("offset") int offset);
 
+    /** 指定用户主页仅查询公开且已发布的内容，保证分页语义在数据库层完成。 */
+    List<KnowPostFeedRow> listUserPublicPublished(@Param("creatorId") long creatorId,
+                                                  @Param("limit") int limit,
+                                                  @Param("offset") int offset);
+
     // 设置置顶
     int updateTop(@Param("id") Long id, @Param("creatorId") Long creatorId, @Param("isTop") Boolean isTop);
 
@@ -49,6 +54,9 @@ public interface KnowPostMapper {
 
     // 列出所有已发布知文ID（含非公开），供后台全量索引重建遍历
     List<Long> listAllPublishedIds();
+
+    /** 全部知文 ID，供启动时校准 OSS 对象 ACL（含草稿、私密和已删除记录）。 */
+    List<Long> listAllIds();
 
     // 该用户最近一篇草稿 ID（用于 AI 录入后发布；无草稿返回 null）
     Long findLatestDraftId(@Param("creatorId") long creatorId);

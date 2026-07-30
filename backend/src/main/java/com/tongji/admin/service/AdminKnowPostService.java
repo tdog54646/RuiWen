@@ -1,12 +1,18 @@
 package com.tongji.admin.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tongji.admin.dto.AdminKnowPostItem;
 import com.tongji.admin.dto.PageResult;
 import com.tongji.admin.mapper.AdminKnowPostMapper;
 import com.tongji.auth.exception.BusinessException;
 import com.tongji.auth.exception.ErrorCode;
 import com.tongji.knowpost.event.KnowPostEvent;
+import com.tongji.knowpost.mapper.KnowPostMapper;
+import com.tongji.knowpost.model.KnowPostDetailRow;
+import com.tongji.knowpost.service.FeedCacheService;
 import com.tongji.relation.outbox.OutboxService;
+import com.tongji.storage.OssStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +28,10 @@ public class AdminKnowPostService {
 
     private final AdminKnowPostMapper adminKnowPostMapper;
     private final OutboxService outboxService;
+    private final KnowPostMapper knowPostMapper;
+    private final OssStorageService ossStorageService;
+    private final ObjectMapper objectMapper;
+    private final FeedCacheService feedCacheService;
 
     /**
      * 知文列表/搜索。
@@ -43,10 +53,12 @@ public class AdminKnowPostService {
      */
     @Transactional
     public void updateVisibility(long id, String visible) {
-        requireExists(id);
+        long creatorId = requireCreator(id);
         adminKnowPostMapper.updateVisibility(id, visible);
+        syncPostAssetAcl(id);
         String eventType = "public".equals(visible) ? "KnowPostPublic" : "KnowPostPrivate";
         enqueueKnowPostEvent(id, eventType, visible);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /**
@@ -55,8 +67,9 @@ public class AdminKnowPostService {
      */
     @Transactional
     public void updateTop(long id, boolean isTop) {
-        requireExists(id);
+        long creatorId = requireCreator(id);
         adminKnowPostMapper.updateTop(id, isTop);
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /**
@@ -65,9 +78,11 @@ public class AdminKnowPostService {
      */
     @Transactional
     public void delete(long id) {
-        requireExists(id);
+        long creatorId = requireCreator(id);
         adminKnowPostMapper.softDelete(id);
+        syncPostAssetAcl(id);
         enqueueKnowPostEvent(id, "KnowPostDeleted", "delete");
+        feedCacheService.invalidatePostAfterCommit(creatorId, id);
     }
 
     /** 投递知文索引事件，与用户侧 {@code KnowPostServiceImpl#enqueueKnowPostEvent} 保持一致。 */
@@ -75,9 +90,29 @@ public class AdminKnowPostService {
         outboxService.insert("knowpost", id, eventType, new KnowPostEvent("knowpost", op, id));
     }
 
-    private void requireExists(long id) {
-        if (adminKnowPostMapper.findCreatorIdById(id) == null) {
+    private long requireCreator(long id) {
+        Long creatorId = adminKnowPostMapper.findCreatorIdById(id);
+        if (creatorId == null) {
             throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND, "知文不存在");
         }
+        return creatorId;
+    }
+
+    private void syncPostAssetAcl(long id) {
+        if (!ossStorageService.isConfigured()) return;
+        KnowPostDetailRow row = knowPostMapper.findDetailById(id);
+        if (row == null) return;
+        boolean publicRead = "published".equals(row.getStatus()) && "public".equals(row.getVisible());
+        List<String> images = List.of();
+        if (row.getImgUrls() != null && !row.getImgUrls().isBlank()) {
+            try {
+                images = objectMapper.readValue(row.getImgUrls(), new TypeReference<>() {});
+            } catch (Exception ignored) {
+                images = List.of();
+            }
+        }
+        String contentReference = row.getContentObjectKey() == null
+                ? row.getContentUrl() : row.getContentObjectKey();
+        ossStorageService.setPostAssetsAccess(contentReference, images, publicRead);
     }
 }

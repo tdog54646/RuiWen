@@ -36,20 +36,17 @@ public class FeedCacheInvalidationListener {
     private final Cache<String, FeedPageResponse> feedPublicCache;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
-    private final com.tongji.counter.service.UserCounterService userCounterService;
     private final com.tongji.knowpost.mapper.KnowPostMapper knowPostMapper;
 
     public FeedCacheInvalidationListener(FeedCacheService feedCacheService,
                                          @Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
                                          StringRedisTemplate redis,
                                          ObjectMapper objectMapper,
-                                         com.tongji.counter.service.UserCounterService userCounterService,
                                          com.tongji.knowpost.mapper.KnowPostMapper knowPostMapper) {
         this.feedCacheService = feedCacheService;
         this.feedPublicCache = feedPublicCache;
         this.redis = redis;
         this.objectMapper = objectMapper;
-        this.userCounterService = userCounterService;
         this.knowPostMapper = knowPostMapper;
     }
 
@@ -76,8 +73,7 @@ public class FeedCacheInvalidationListener {
                 com.tongji.knowpost.model.KnowPost post = knowPostMapper.findById(Long.valueOf(eid));
                 if (post != null && post.getCreatorId() != null) {
                     long owner = post.getCreatorId();
-                    if ("like".equals(metric)) userCounterService.incrementLikesReceived(owner, delta);
-                    if ("fav".equals(metric)) userCounterService.incrementFavsReceived(owner, delta);
+                    feedCacheService.deletePersonalFeedCaches(owner);
                 }
             } catch (Exception ignored) {}
 

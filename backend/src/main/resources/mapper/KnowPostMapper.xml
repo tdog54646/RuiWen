@@ -46,7 +46,7 @@
             <if test="contentSha256 != null">content_sha256 = #{contentSha256},</if>
             update_time = #{updateTime}
         </set>
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status = #{status}
     </update>
 
     <update id="updateMetadata" parameterType="com.tongji.knowpost.model.KnowPost">
@@ -62,34 +62,34 @@
             <if test="type != null">type = #{type},</if>
             update_time = #{updateTime}
         </set>
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status IN ('draft', 'published')
     </update>
 
     <update id="publish">
         UPDATE know_posts
         SET status = 'published', publish_time = NOW(), update_time = NOW()
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status = 'draft'
     </update>
 
     <!-- 设置置顶 -->
     <update id="updateTop">
         UPDATE know_posts
         SET is_top = #{isTop}, update_time = NOW()
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status IN ('draft', 'published')
     </update>
 
     <!-- 设置可见性 -->
     <update id="updateVisibility">
         UPDATE know_posts
         SET visible = #{visible}, update_time = NOW()
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status IN ('draft', 'published')
     </update>
 
     <!-- 软删除（保留记录，仅状态修改） -->
     <update id="softDelete">
         UPDATE know_posts
         SET status = 'deleted', update_time = NOW()
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status &lt;&gt; 'deleted'
     </update>
 
     <!-- 首页 Feed 列表查询（公开可见 + 已发布），置顶优先，其次按发布时间倒序 -->
@@ -134,6 +134,28 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <select id="listUserPublicPublished" resultType="com.tongji.knowpost.model.KnowPostFeedRow">
+        SELECT
+            p.id,
+            p.title,
+            p.description,
+            p.tags,
+            p.img_urls AS imgUrls,
+            u.avatar AS authorAvatar,
+            u.nickname AS authorNickname,
+            u.tags_json AS authorTagJson,
+            p.publish_time AS publishTime,
+            p.is_top AS isTop,
+            p.visible
+        FROM know_posts p
+        JOIN users u ON p.creator_id = u.id
+        WHERE p.creator_id = #{creatorId}
+          AND p.status = 'published'
+          AND p.visible = 'public'
+        ORDER BY p.is_top DESC, p.publish_time DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <!-- 详情查询（含作者信息） -->
     <select id="findDetailById" parameterType="long" resultType="com.tongji.knowpost.model.KnowPostDetailRow">
         SELECT
@@ -144,6 +166,7 @@
             p.tags,
             p.img_urls AS imgUrls,
             p.content_url AS contentUrl,
+            p.content_object_key AS contentObjectKey,
             p.content_etag AS contentEtag,
             p.content_sha256 AS contentSha256,
             u.avatar AS authorAvatar,
@@ -169,6 +192,9 @@
     </select>
     <select id="listAllPublishedIds" resultType="long">
         SELECT id FROM know_posts WHERE status = 'published' ORDER BY id
+    </select>
+    <select id="listAllIds" resultType="long">
+        SELECT id FROM know_posts ORDER BY id
     </select>
 
     <select id="findLatestDraftId" parameterType="long" resultType="java.lang.Long">
