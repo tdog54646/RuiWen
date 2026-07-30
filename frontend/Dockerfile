@@ -10,9 +10,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# NEXT_PUBLIC_* variables are usually injected at build time.
+# NEXT_PUBLIC_* variables are compiled into the browser bundle at build time.
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
 
 RUN npm run build
 

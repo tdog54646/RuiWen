@@ -44,6 +44,13 @@ FRONTEND_IMAGE="$(env_value FRONTEND_IMAGE ruiwen-frontend)"
 # 不读取根目录 .env：该文件用于本地开发，常见值是 localhost，若被 Next.js
 # 编译进浏览器代码会导致生产客户端错误访问用户自己的 localhost。
 NEXT_PUBLIC_API_BASE_URL="${NEXT_PUBLIC_API_BASE_URL:-http://backend:8080}"
+NEXT_PUBLIC_GOOGLE_CLIENT_ID="$(env_value NEXT_PUBLIC_GOOGLE_CLIENT_ID "")"
+
+if [[ -z "$NEXT_PUBLIC_GOOGLE_CLIENT_ID" ]]; then
+  echo "NEXT_PUBLIC_GOOGLE_CLIENT_ID is required to build the production frontend." >&2
+  echo "Set it in $ENV_FILE or export it before packaging." >&2
+  exit 2
+fi
 
 mkdir -p "$RELEASE_ROOT"
 rm -rf "$RELEASE_DIR"
@@ -59,6 +66,7 @@ docker_no_proxy tag "$BACKEND_IMAGE:$TAG" "$BACKEND_IMAGE:latest"
 echo "==> Build frontend image: $FRONTEND_IMAGE:$TAG ($PLATFORM)"
 docker_no_proxy build --platform "$PLATFORM" \
   --build-arg "NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL" \
+  --build-arg "NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID" \
   -t "$FRONTEND_IMAGE:$TAG" \
   -f "$ROOT_DIR/frontend/Dockerfile" \
   "$ROOT_DIR/frontend"
