@@ -7,12 +7,17 @@ export type PresignRequest = {
   postId: string
   contentType: string
   ext: string
+  size: number
 }
 
 export type PresignResponse = {
   objectKey: string
   putUrl: string
+  objectUrl: string
+  readUrl: string
+  method: "POST"
   headers: Record<string, string>
+  formFields: Record<string, string>
   expiresIn: number
 }
 

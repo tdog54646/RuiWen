@@ -44,4 +44,23 @@ public class PdfProperties {
      * 正文 Markdown 中远程图片转内嵌 data URI 的抓取超时（秒）。
      */
     private int imageFetchTimeoutSeconds = 5;
+
+    /** 单张远程图片允许读取的最大字节数，防止大响应耗尽堆内存。 */
+    private int maxImageBytes = 5 * 1024 * 1024;
+
+    /** 单次 PDF 导出最多抓取的不同远程图片数量。 */
+    private int maxRemoteImages = 20;
+
+    /** 单次 PDF 导出允许内嵌的远程图片原始字节总量。 */
+    private int maxEmbeddedImageBytesTotal = 20 * 1024 * 1024;
+
+    /** 远程图片允许跟随的最大重定向次数；每一跳都会重新执行 SSRF 校验。 */
+    private int maxImageRedirects = 3;
+
+    /**
+     * 允许 PDF 导出服务下载额外图片域名的白名单。已配置的 OSS 源站/公开域名会自动允许；
+     * 默认空列表表示除此之外不下载任何远程图片；
+     * 支持精确域名和形如 *.example.com 的子域通配。
+     */
+    private List<String> allowedImageHosts = List.of();
 }

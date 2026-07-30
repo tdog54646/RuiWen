@@ -1,6 +1,8 @@
 package com.tongji.storage.api.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 /**
  * 聊天图片预签名直传请求（不依赖 postId，按用户隔离）。
@@ -10,5 +12,6 @@ import jakarta.validation.constraints.NotBlank;
  */
 public record ChatImagePresignRequest(
         @NotBlank String contentType,
-        String ext
+        String ext,
+        @NotNull @Positive Long size
 ) {}

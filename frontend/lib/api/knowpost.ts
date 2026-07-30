@@ -203,14 +203,15 @@ export function withCacheBuster(url: string): string {
 }
 
 export async function uploadToPresigned(
-  putUrl: string,
-  headers: Record<string, string>,
+  presign: PresignResponse,
   file: File,
 ) {
-  const resp = await fetch(ensureHttps(putUrl), {
-    method: "PUT",
-    headers,
-    body: file,
+  const form = new FormData()
+  Object.entries(presign.formFields).forEach(([key, value]) => form.append(key, value))
+  form.append("file", file)
+  const resp = await fetch(ensureHttps(presign.putUrl), {
+    method: presign.method,
+    body: form,
     credentials: "omit",
   })
   if (!resp.ok) {

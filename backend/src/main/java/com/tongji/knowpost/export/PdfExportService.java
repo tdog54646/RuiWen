@@ -3,6 +3,7 @@ package com.tongji.knowpost.export;
 import com.openhtmltopdf.outputdevice.helper.BaseRendererBuilder.FontStyle;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import com.openhtmltopdf.util.XRLog;
+import com.tongji.storage.config.OssProperties;
 import lombok.RequiredArgsConstructor;
 import org.commonmark.Extension;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
@@ -18,6 +19,10 @@ import org.w3c.dom.Document;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -27,6 +32,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,6 +54,7 @@ public class PdfExportService {
             Pattern.compile("<img[^>]+src\\s*=\\s*\"(https?://[^\"]+)\"");
 
     private final PdfProperties props;
+    private final OssProperties ossProperties;
 
     private volatile Parser parser;
     private volatile HtmlRenderer renderer;
@@ -149,11 +156,32 @@ public class PdfExportService {
         Map<String, String> cache = new HashMap<>();
         Matcher matcher = IMG_SRC.matcher(html);
         StringBuilder sb = new StringBuilder();
+        int fetchedImages = 0;
+        long embeddedCharacters = 0;
+        long maxEmbeddedCharacters = (long) props.getMaxEmbeddedImageBytesTotal() * 4 / 3 + 1024;
         while (matcher.find()) {
             String url = matcher.group(1);
-            String replacement = cache.computeIfAbsent(url, this::fetchAsDataUri);
+            String replacement;
+            if (cache.containsKey(url)) {
+                replacement = cache.get(url);
+            } else if (fetchedImages >= props.getMaxRemoteImages()) {
+                replacement = null;
+                cache.put(url, null);
+            } else {
+                fetchedImages++;
+                replacement = fetchAsDataUri(url);
+                cache.put(url, replacement);
+            }
+            // 同一图片被重复引用时也会重复写入 data URI，因此按每次输出累计总量。
+            if (replacement != null
+                    && embeddedCharacters + replacement.length() > maxEmbeddedCharacters) {
+                replacement = null;
+            } else if (replacement != null) {
+                embeddedCharacters += replacement.length();
+            }
             if (replacement == null) {
-                replacement = matcher.group(0);
+                // 下载失败或地址不安全时清空 src，避免后续渲染器再次尝试访问原始 URL。
+                replacement = matcher.group(0).replace(url, "");
             } else {
                 replacement = matcher.group(0).replace(url, replacement);
             }
@@ -166,23 +194,160 @@ public class PdfExportService {
     private String fetchAsDataUri(String url) {
         try {
             HttpClient client = httpClient();
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(props.getImageFetchTimeoutSeconds()))
-                    .GET().build();
-            HttpResponse<byte[]> resp = client.send(req, HttpResponse.BodyHandlers.ofByteArray());
-            if (resp.statusCode() / 100 != 2 || resp.body() == null) {
-                return null;
+            URI current = URI.create(url);
+            int redirects = 0;
+            while (true) {
+                validateRemoteUri(current);
+                HttpRequest req = HttpRequest.newBuilder(current)
+                        .timeout(Duration.ofSeconds(props.getImageFetchTimeoutSeconds()))
+                        .header("Accept", "image/*")
+                        .GET().build();
+                HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+                int status = resp.statusCode();
+                if (isRedirect(status)) {
+                    try (InputStream ignored = resp.body()) {
+                        if (redirects++ >= props.getMaxImageRedirects()) {
+                            return null;
+                        }
+                        String location = resp.headers().firstValue("location").orElse(null);
+                        if (location == null) {
+                            return null;
+                        }
+                        current = current.resolve(location);
+                        continue;
+                    }
+                }
+                if (status / 100 != 2) {
+                    try (InputStream ignored = resp.body()) {
+                        return null;
+                    }
+                }
+                String mime = resp.headers().firstValue("content-type")
+                        .orElse("").split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+                if (!mime.startsWith("image/")) {
+                    try (InputStream ignored = resp.body()) {
+                        return null;
+                    }
+                }
+                long declaredLength = resp.headers().firstValueAsLong("content-length").orElse(-1L);
+                if (declaredLength > props.getMaxImageBytes()) {
+                    try (InputStream ignored = resp.body()) {
+                        return null;
+                    }
+                }
+                byte[] body;
+                try (InputStream input = resp.body()) {
+                    body = readLimited(input, props.getMaxImageBytes());
+                }
+                String base64 = Base64.getEncoder().encodeToString(body);
+                return "data:" + mime + ";base64," + base64;
             }
-            String mime = resp.headers().firstValue("content-type").orElse("image/png").split(";")[0].trim();
-            if (!mime.startsWith("image/")) {
-                mime = "image/png";
-            }
-            String base64 = Base64.getEncoder().encodeToString(resp.body());
-            return "data:" + mime + ";base64," + base64;
         } catch (Exception e) {
             log.debug("内嵌图片失败 url={}：{}", url, e.getMessage());
             return null;
         }
+    }
+
+    void validateRemoteUri(URI uri) throws Exception {
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        if (!("http".equals(scheme) || "https".equals(scheme))
+                || uri.getHost() == null || uri.getUserInfo() != null) {
+            throw new IllegalArgumentException("不允许的图片地址");
+        }
+        if (!isAllowedImageHost(uri.getHost())) {
+            throw new IllegalArgumentException("图片域名不在允许列表");
+        }
+        InetAddress[] addresses = InetAddress.getAllByName(uri.getHost());
+        if (addresses.length == 0) {
+            throw new IllegalArgumentException("图片域名无法解析");
+        }
+        for (InetAddress address : addresses) {
+            if (!isPublicAddress(address)) {
+                throw new IllegalArgumentException("图片地址指向非公网 IP");
+            }
+        }
+    }
+
+    private boolean isAllowedImageHost(String host) {
+        String normalizedHost = host.toLowerCase(Locale.ROOT);
+        String endpointHost = configuredHost(ossProperties.getEndpoint());
+        if (endpointHost != null && ossProperties.getBucket() != null
+                && normalizedHost.equals((ossProperties.getBucket() + "." + endpointHost).toLowerCase(Locale.ROOT))) {
+            return true;
+        }
+        String publicHost = configuredHost(ossProperties.getPublicDomain());
+        if (publicHost != null && normalizedHost.equals(publicHost.toLowerCase(Locale.ROOT))) {
+            return true;
+        }
+        if (props.getAllowedImageHosts() == null || props.getAllowedImageHosts().isEmpty()) {
+            return false;
+        }
+        for (String configured : props.getAllowedImageHosts()) {
+            if (configured == null || configured.isBlank()) continue;
+            String allowed = configured.trim().toLowerCase(Locale.ROOT);
+            if (allowed.startsWith("*.")) {
+                String suffix = allowed.substring(2);
+                if (normalizedHost.endsWith("." + suffix)) return true;
+            } else if (normalizedHost.equals(allowed)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String configuredHost(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return URI.create(value.contains("://") ? value : "https://" + value).getHost();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    static boolean isPublicAddress(InetAddress address) {
+        if (address.isAnyLocalAddress() || address.isLoopbackAddress()
+                || address.isLinkLocalAddress() || address.isSiteLocalAddress()
+                || address.isMulticastAddress()) {
+            return false;
+        }
+        byte[] bytes = address.getAddress();
+        if (address instanceof Inet4Address && bytes.length == 4) {
+            int a = Byte.toUnsignedInt(bytes[0]);
+            int b = Byte.toUnsignedInt(bytes[1]);
+            if (a == 0 || a == 10 || a == 127 || a >= 224) return false;
+            if (a == 100 && b >= 64 && b <= 127) return false;
+            if (a == 169 && b == 254) return false;
+            if (a == 172 && b >= 16 && b <= 31) return false;
+            if (a == 192 && b == 168) return false;
+            return !(a == 198 && (b == 18 || b == 19));
+        }
+        if (address instanceof Inet6Address && bytes.length == 16) {
+            int first = Byte.toUnsignedInt(bytes[0]);
+            return (first & 0xfe) != 0xfc;
+        }
+        return false;
+    }
+
+    private static byte[] readLimited(InputStream input, int maxBytes) throws Exception {
+        if (maxBytes <= 0) {
+            throw new IllegalArgumentException("图片大小限制必须大于 0");
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(maxBytes, 64 * 1024));
+        byte[] buffer = new byte[8192];
+        int total = 0;
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            total += read;
+            if (total > maxBytes) {
+                throw new IllegalArgumentException("远程图片超过大小限制");
+            }
+            output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
+    }
+
+    private static boolean isRedirect(int status) {
+        return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
     }
 
     private HttpClient httpClient() {
@@ -191,7 +356,7 @@ public class PdfExportService {
                 if (httpClient == null) {
                     httpClient = HttpClient.newBuilder()
                             .connectTimeout(Duration.ofSeconds(props.getImageFetchTimeoutSeconds()))
-                            .followRedirects(HttpClient.Redirect.NORMAL)
+                            .followRedirects(HttpClient.Redirect.NEVER)
                             .build();
                 }
             }

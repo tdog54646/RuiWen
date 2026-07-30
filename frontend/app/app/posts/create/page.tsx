@@ -217,9 +217,10 @@ function CreatePageContent() {
           postId: id,
           contentType,
           ext,
+          size: f.size,
         })
-        await uploadToPresigned(presign.putUrl, presign.headers, f)
-        const ossUrl = ensureHttps(presign.putUrl).split("?")[0]
+        await uploadToPresigned(presign, f)
+        const ossUrl = ensureHttps(presign.objectUrl)
         const localPreview = URL.createObjectURL(f)
         setUploadedImages((prev) => [
           ...prev,
@@ -274,12 +275,9 @@ function CreatePageContent() {
         postId: id,
         contentType: "text/markdown",
         ext: ".md",
+        size,
       })
-      const { etag } = await uploadToPresigned(
-        presign.putUrl,
-        presign.headers,
-        file,
-      )
+      const { etag } = await uploadToPresigned(presign, file)
       const imgUrls = uploadedImages.map((img) => img.ossUrl)
       if (isEditMode) {
         await knowpostService.saveEdit(id, {

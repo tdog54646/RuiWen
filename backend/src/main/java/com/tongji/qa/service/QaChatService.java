@@ -46,6 +46,7 @@ import com.tongji.knowpost.mapper.KnowPostMapper;
 import com.tongji.knowpost.model.KnowPost;
 import com.tongji.knowpost.service.KnowPostService;
 import com.tongji.llm.service.PostDraftService;
+import com.tongji.storage.OssStorageService;
 
 /**
  * 多轮问答编排核心。
@@ -80,6 +81,7 @@ public class QaChatService {
     private final KnowPostService knowPostService;
     private final KnowPostMapper knowPostMapper;
     private final ImageRecognitionService imageRecognitionService;
+    private final OssStorageService ossStorageService;
 
     // -------------------------------------------------------------------------
     // 多轮流式问答
@@ -118,16 +120,20 @@ public class QaChatService {
         long userMessageId = idGen.nextId();
         Instant now = Instant.now();
         // 过滤空值、去空白、至多 4 张
-        List<String> imageUrls = req.imageUrls() == null ? List.of()
+        List<String> storedImageUrls = req.imageUrls() == null ? List.of()
                 : req.imageUrls().stream()
                         .filter(s -> s != null && !s.isBlank())
                         .map(String::trim)
+                        .map(url -> ossStorageService.validateChatImageUpload(url, userId))
                         .limit(4)
                         .toList();
+        List<String> imageUrls = storedImageUrls.stream()
+                .map(url -> ossStorageService.privateChatImageUrl(url, userId))
+                .toList();
         boolean hasImage = !imageUrls.isEmpty();
         messageMapper.insert(QaMessage.builder()
                 .id(userMessageId).conversationId(conversationId).userId(userId)
-                .role("user").content(question).imageUrls(hasImage ? imageUrls : null)
+                .role("user").content(question).imageUrls(hasImage ? storedImageUrls : null)
                 .status("completed").createdAt(now).build());
 
         // 3) 历史窗口（最近 N 轮，排除刚插入的当轮 user，并反转为正序）
@@ -233,6 +239,13 @@ public class QaChatService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "会话不存在或无访问权限");
         }
         return messageMapper.listByConversation(cid, 500, 0).stream()
+                .peek(message -> {
+                    if (message.getImageUrls() != null) {
+                        message.setImageUrls(message.getImageUrls().stream()
+                                .map(url -> ossStorageService.privateChatImageUrl(url, userId))
+                                .toList());
+                    }
+                })
                 .map(MessageResponse::of).toList();
     }
 
