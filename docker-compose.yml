@@ -43,7 +43,10 @@ services:
   kafka:
     image: ${KAFKA_IMAGE:-apache/kafka:3.7.0}
     restart: unless-stopped
+    mem_limit: 768m
+    memswap_limit: 768m
     environment:
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms256m -Xmx384m}
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: EXTERNAL://0.0.0.0:9092,INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093

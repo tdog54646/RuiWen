@@ -27,6 +27,9 @@ spring:
       max-lifetime: 1700000             # 约 28 分钟
       keepalive-time: 300000            # 5 分钟发一次“保活”
       connection-timeout: 10000         # 30 秒拿不到连接就报错
+      data-source-properties:
+        # 幂等状态迁移依赖实际变更行数，禁用 CLIENT_FOUND_ROWS 语义。
+        useAffectedRows: true
   jackson:
     serialization:
       write-dates-as-timestamps: false
@@ -175,6 +178,11 @@ oss:
   bucket: ${OSS_BUCKET:}
   public-domain: ${OSS_PUBLIC_DOMAIN:}
   folder: ${OSS_FOLDER:avatars}
+  read-url-ttl-seconds: ${OSS_READ_URL_TTL_SECONDS:3600}
+  # 历史对象 ACL 的一次性迁移开关；迁移时显式启用，完成后关闭，避免每次重启全量扫描。
+  acl-reconcile-on-startup: ${OSS_ACL_RECONCILE_ON_STARTUP:false}
+  max-post-content-bytes: ${OSS_MAX_POST_CONTENT_BYTES:2097152}
+  max-image-bytes: ${OSS_MAX_IMAGE_BYTES:10485760}
 
 cache:
   l2:
@@ -268,6 +276,12 @@ app:
   pdf:
     font-family: RuiWen
     image-fetch-timeout-seconds: 5
+    max-image-bytes: ${PDF_MAX_IMAGE_BYTES:5242880}
+    max-remote-images: ${PDF_MAX_REMOTE_IMAGES:20}
+    max-embedded-image-bytes-total: ${PDF_MAX_EMBEDDED_IMAGE_BYTES_TOTAL:20971520}
+    max-image-redirects: ${PDF_MAX_IMAGE_REDIRECTS:3}
+    # OSS 域名自动允许；其他远程图片按需配置逗号分隔的可信域名。
+    allowed-image-hosts: ${PDF_ALLOWED_IMAGE_HOSTS:}
     # font-search-paths:
     #   - /usr/share/fonts/noto/NotoSansCJKsc-Regular.otf
     #   - /System/Library/Fonts/Supplemental/Arial Unicode.ttf
