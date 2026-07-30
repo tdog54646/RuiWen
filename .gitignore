@@ -42,3 +42,6 @@ backend/logs/
 .mvn
 skills-lock.json
 CLAUDE.md
+
+# 本地代码审计、修复说明与功能测试报告（不提交仓库）
+/local-reports/
