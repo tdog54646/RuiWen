@@ -84,7 +84,7 @@ public class SearchIndexService {
         try {
             KnowPostDetailRow row = knowPostMapper.findDetailById(id);
             if (row == null) {
-                log.warn("Index upsert skipped: post {} not found", id);
+                softDeleteKnowPost(id);
                 return;
             }
             if (!"published".equalsIgnoreCase(row.getStatus()) || !"public".equalsIgnoreCase(row.getVisible())) {
@@ -140,7 +140,8 @@ public class SearchIndexService {
             IndexResponse resp = es.index(req);
             log.info("Indexed post {} result={} version={}", id, resp.result(), resp.version());
         } catch (Exception e) {
-            log.error("Index upsert failed for post {}: {}", id, e.getMessage());
+            log.error("Index upsert failed for post {}", id, e);
+            throw new IllegalStateException("搜索索引写入失败: " + id, e);
         }
     }
 
@@ -160,7 +161,8 @@ public class SearchIndexService {
             );
             es.index(req);
         } catch (Exception e) {
-            log.error("Index soft delete failed for post {}: {}", id, e.getMessage());
+            log.error("Index soft delete failed for post {}", id, e);
+            throw new IllegalStateException("搜索索引删除失败: " + id, e);
         }
     }
 

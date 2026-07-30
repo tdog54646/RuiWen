@@ -44,12 +44,13 @@ class HybridSearchServiceTest {
     }
 
     @Test
-    void allScopeKeepsPublicMineAndLegacyVisibilitySemantics() {
+    void allScopeAllowsPublicAndMineButRejectsLegacyDocumentsFromOthers() {
         RetrievalContext allContext = RetrievalContext.of(1L, RetrievalContext.Scope.ALL);
 
         assertTrue(HybridSearchService.isSourceAuthorized(source("2", "public"), allContext));
         assertTrue(HybridSearchService.isSourceAuthorized(source("1", "private"), allContext));
-        assertTrue(HybridSearchService.isSourceAuthorized(source("2", null), allContext));
+        assertTrue(HybridSearchService.isSourceAuthorized(source("1", null), allContext));
+        assertFalse(HybridSearchService.isSourceAuthorized(source("2", null), allContext));
         assertFalse(HybridSearchService.isSourceAuthorized(source("2", "private"), allContext));
     }
 

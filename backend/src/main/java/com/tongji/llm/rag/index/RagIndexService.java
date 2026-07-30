@@ -7,6 +7,7 @@ import com.tongji.config.EsProperties;
 import com.tongji.knowpost.mapper.KnowPostMapper;
 import com.tongji.knowpost.model.KnowPostDetailRow;
 import com.tongji.llm.rag.chunk.SemanticChunker;
+import com.tongji.storage.OssStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -40,6 +41,7 @@ public class RagIndexService {
 
     private final VectorStore vectorStore;
     private final KnowPostMapper knowPostMapper;
+    private final OssStorageService ossStorageService;
     private final ElasticsearchClient es;
     private final EsProperties esProps;
     private final SemanticChunker semanticChunker;
@@ -65,83 +67,87 @@ public class RagIndexService {
     }
 
     public int rebuildSinglePost(long postId) {
-        deletePostChunks(postId);
         return reindexSinglePost(postId, true);
     }
 
     private int reindexSinglePost(long postId, boolean force) {
         KnowPostDetailRow row = knowPostMapper.findDetailById(postId);
         if (row == null) {
-            log.warn("Post {} not found", postId);
+            deletePostChunks(postId);
             return 0;
         }
 
         // 仅索引已发布知文；不再限制 visible——非公开内容进入个人私有库，检索时按 creatorId 过滤
         if (!"published".equalsIgnoreCase(row.getStatus())) {
-            log.warn("Post {} is not published, skip indexing", postId);
+            deletePostChunks(postId);
             return 0;
         }
 
         // 内容地址缺失则无法抓取正文
         if (!StringUtils.hasText(row.getContentUrl())) {
-            log.warn("Post {} missing contentUrl or not found", postId);
-            return 0;
+            throw new IllegalStateException("知文正文地址缺失: " + postId);
         }
 
         // 指纹检测：如未变化则跳过重建
         String currentSha = row.getContentSha256();
         String currentEtag = row.getContentEtag();
-        if (!force && isUpToDate(postId, currentSha, currentEtag)) {
+        if (!force && isUpToDate(postId, row)) {
             log.info("Post {} already indexed with same fingerprint, skip", postId);
             return 0;
         }
 
         // 抓取 Markdown 正文
-        String text = fetchContent(row.getContentUrl());
+        String contentReference = row.getContentObjectKey() == null
+                ? row.getContentUrl() : row.getContentObjectKey();
+        String fetchUrl = "public".equals(row.getVisible())
+                ? row.getContentUrl()
+                : ossStorageService.privateReadUrl(contentReference);
+        String text = fetchContent(fetchUrl);
         if (!StringUtils.hasText(text)) {
-            log.warn("Post {} content empty", postId);
-            return 0;
+            throw new IllegalStateException("知文正文拉取为空: " + postId);
         }
 
         // 文本处理
         List<String> chunks = chunkMarkdown(text);
         log.info("Post {} content length={}, chunks size={}", postId, text.length(), chunks.size());
         if (chunks.isEmpty()) {
-            log.warn("Post {} produced no chunks, skipping indexing", postId);
-            return 0;
+            throw new IllegalStateException("知文无法生成向量切片: " + postId);
         }
-        // 幂等 upsert：先删除旧切片
-        if (!force) {
-            deletePostChunks(postId);
-        }
+
+        Set<String> previousDocumentIds = findDocumentIds(postId);
 
         // 组装 Document（文本 + 业务元数据），用于向量写入与检索过滤
         long nowMs = Instant.now().toEpochMilli();
+        String indexVersion = UUID.nameUUIDFromBytes((String.valueOf(currentSha) + "|"
+                + String.valueOf(currentEtag) + "|" + String.valueOf(row.getTitle()) + "|"
+                + String.valueOf(row.getVisible()) + "|" + row.getCreatorId())
+                .getBytes(StandardCharsets.UTF_8)).toString();
         List<Document> docs = new ArrayList<>(chunks.size());
         for (int i = 0; i < chunks.size(); i++) {
-            String cid = postId + "#" + i;
+            String cid = postId + "#" + indexVersion + "#" + i;
             Map<String, Object> meta = new LinkedHashMap<>();
             meta.put("postId", String.valueOf(postId));
             meta.put("chunkId", cid);
             meta.put("position", i);
-            meta.put("contentEtag", currentEtag);
-            meta.put("contentSha256", currentSha);
-            meta.put("contentUrl", row.getContentUrl());
-            meta.put("title", row.getTitle());
+            putIfNonNull(meta, "contentEtag", currentEtag);
+            putIfNonNull(meta, "contentSha256", currentSha);
+            putIfNonNull(meta, "contentUrl", row.getContentUrl());
+            putIfNonNull(meta, "title", row.getTitle());
             // 新增字段：与 es-mapping-rag-chunk.json 中的字段保持一致
             meta.put("createdAt", nowMs);
             meta.put("updatedAt", nowMs);
             // 用户隔离：检索时按 visible/creatorId 过滤
-            meta.put("visible", row.getVisible());
-            meta.put("creatorId", String.valueOf(row.getCreatorId()));
-            docs.add(new Document(chunks.get(i), meta));
+            putIfNonNull(meta, "visible", row.getVisible());
+            putIfNonNull(meta, "creatorId", row.getCreatorId() == null ? null : String.valueOf(row.getCreatorId()));
+            docs.add(new Document(cid, chunks.get(i), meta));
         }
-        try {
-            // 批量写入向量库
-            vectorStore.add(docs);
-        } catch (Exception e) {
-            log.error("VectorStore add failed: {} (docs size={})", e.getMessage(), docs.size(), e);
-            return 0;
+        // 先以稳定 ID upsert 新切片；只有全部写入成功后才清理旧的随机 ID 或多余尾部切片。
+        vectorStore.add(docs);
+        Set<String> currentDocumentIds = new LinkedHashSet<>();
+        for (Document doc : docs) currentDocumentIds.add(doc.getId());
+        previousDocumentIds.removeAll(currentDocumentIds);
+        if (!previousDocumentIds.isEmpty()) {
+            vectorStore.delete(new ArrayList<>(previousDocumentIds));
         }
         // 返回本次写入的切片数量
         return docs.size();
@@ -152,7 +158,7 @@ public class RagIndexService {
      * - 以 postId 查询任意一条已索引文档的 metadata
      * - 优先比较 SHA256，其次比较 ETag；一致则视为无需重建
      */
-    private boolean isUpToDate(long postId, String currentSha, String currentEtag) {
+    private boolean isUpToDate(long postId, KnowPostDetailRow current) {
         try {
             if (!StringUtils.hasText(esProps.getIndex())) {
                 // 未配置索引名则无法判断，直接视为需要重建
@@ -171,6 +177,14 @@ public class RagIndexService {
             if (source == null) return false;
             Object metaObj = source.get("metadata");
             if (!(metaObj instanceof Map<?, ?> meta)) return false;
+            // 权限与展示元数据同样属于索引指纹。字段缺失时必须重建，不能沿用旧的宽松语义。
+            if (!Objects.equals(asString(meta.get("visible")), current.getVisible())
+                    || !Objects.equals(asString(meta.get("creatorId")), String.valueOf(current.getCreatorId()))
+                    || !Objects.equals(asString(meta.get("title")), current.getTitle())) {
+                return false;
+            }
+            String currentSha = current.getContentSha256();
+            String currentEtag = current.getContentEtag();
             String indexedSha = asString(meta.get("contentSha256"));
             String indexedEtag = asString(meta.get("contentEtag"));
             if (StringUtils.hasText(currentSha) && StringUtils.hasText(indexedSha)) {
@@ -191,20 +205,52 @@ public class RagIndexService {
      */
     public void deletePostChunks(long postId) {
         try {
-            if (!StringUtils.hasText(esProps.getIndex())) return;
+            requireIndexConfigured();
             es.deleteByQuery(d -> d
                     .index(esProps.getIndex())
                     .query(q -> q.term(t -> t
                             .field("metadata.postId")
                             .value(v -> v.stringValue(String.valueOf(postId))))));
         } catch (Exception e) {
-            log.warn("Delete old chunks failed for post {}: {}", postId, e.getMessage());
+            log.error("Delete old chunks failed for post {}", postId, e);
+            throw new IllegalStateException("RAG 索引删除失败: " + postId, e);
+        }
+    }
+
+    private Set<String> findDocumentIds(long postId) {
+        try {
+            requireIndexConfigured();
+            SearchResponse<Map> response = es.search(s -> s
+                            .index(esProps.getIndex())
+                            .size(10_000)
+                            .source(source -> source.fetch(false))
+                            .query(q -> q.term(t -> t
+                                    .field("metadata.postId")
+                                    .value(v -> v.stringValue(String.valueOf(postId))))),
+                    Map.class);
+            Set<String> ids = new LinkedHashSet<>();
+            for (Hit<Map> hit : response.hits().hits()) {
+                if (hit.id() != null) ids.add(hit.id());
+            }
+            return ids;
+        } catch (Exception e) {
+            throw new IllegalStateException("RAG 旧切片查询失败: " + postId, e);
+        }
+    }
+
+    private void requireIndexConfigured() {
+        if (!StringUtils.hasText(esProps.getIndex())) {
+            throw new IllegalStateException("RAG Elasticsearch 索引名未配置");
         }
     }
 
     private static String asString(Object o) {
         // 统一处理 null → String 的转换
         return o == null ? null : String.valueOf(o);
+    }
+
+    private static void putIfNonNull(Map<String, Object> metadata, String key, Object value) {
+        if (value != null) metadata.put(key, value);
     }
 
     /**
@@ -229,8 +275,7 @@ public class RagIndexService {
                     : StandardCharsets.UTF_8;
             return new String(bytes, charset);
         } catch (Exception e) {
-            log.error("Fetch content failed: {}", e.getMessage());
-            return null;
+            throw new IllegalStateException("RAG 正文拉取失败", e);
         }
     }
 

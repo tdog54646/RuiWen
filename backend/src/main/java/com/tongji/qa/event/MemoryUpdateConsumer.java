@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 /**
  * 记忆自动更新消费者。
  * <p>消费 {@link QaTopics#MEMORY_UPDATE} 事件，调 {@link QaMemoryService#regenerateMemories(long)}
- * 异步刷新用户画像。失败时仍 ack 以避免毒丸阻塞分区（下次达阈值会再次触发，最终一致）。
+ * 异步刷新用户画像。失败抛给全局 Kafka 重试/DLT，避免静默丢失更新事件。
  */
 @Slf4j
 @Service
@@ -28,11 +28,11 @@ public class MemoryUpdateConsumer {
             log.info("Auto-refreshing memories for user {}", evt.getUserId());
             memoryService.regenerateMemories(evt.getUserId());
         } catch (Exception e) {
-            // 失败不阻塞分区：下次累计达阈值会再次触发，最终一致
-            log.error("Memory auto-update failed (message={}): {}", truncate(message, 200), e.getMessage());
-        } finally {
-            ack.acknowledge();
+            log.error("Memory auto-update failed; delegating to retry/DLT (message={})",
+                    truncate(message, 200), e);
+            throw new IllegalStateException("记忆自动更新失败", e);
         }
+        ack.acknowledge();
     }
 
     private static String truncate(String s, int max) {

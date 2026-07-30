@@ -294,10 +294,9 @@ public class HybridSearchService {
      * 按 {@link RetrievalContext} 构造用户隔离 filter，KNN pre-filter 与 BM25 bool.filter 共用。
      * <ul>
      *   <li>{@code PRIVATE}：{@code creatorId==me AND visible!=public}</li>
-     *   <li>{@code ALL}：{@code visible==public} OR（{@code creatorId==me AND visible!=public}）
-     *       OR（缺 visible 字段的旧文档，过渡放行）</li>
+     *   <li>{@code ALL}：{@code visible==public} OR（{@code creatorId==me AND visible!=public}）</li>
      * </ul>
-     * 过渡放行仅 ALL 生效；新写入数据均带 visible，该条件随增量重建自然失效。
+     * 缺少 visible 的旧文档不再对其他用户放行；仅作者本人可命中。
      */
     private Query buildIsolationFilter(RetrievalContext ctx) {
         Query termPublic = Query.of(q -> q.term(t -> t.field(META_VISIBLE).value(FieldValue.of("public"))));
@@ -308,13 +307,10 @@ public class HybridSearchService {
         if (ctx.scope() == RetrievalContext.Scope.PRIVATE) {
             return mineNonPublic;
         }
-        // ALL：公共 OR 我的非公开 OR 旧数据（缺 visible 字段，过渡放行）
-        Query existsVisible = Query.of(e -> e.exists(ex -> ex.field(META_VISIBLE)));
-        Query visibleMissing = Query.of(q -> q.bool(b -> b.mustNot(existsVisible)));
+        // ALL：公共 OR 我的非公开。mineNonPublic 会覆盖“我的旧文档缺 visible”场景。
         return Query.of(q -> q.bool(b -> b
                 .should(termPublic)
                 .should(mineNonPublic)
-                .should(visibleMissing)
                 .minimumShouldMatch("1")));
     }
 
@@ -376,8 +372,8 @@ public class HybridSearchService {
             return isMine && !isPublic;
         }
 
-        // 与 buildIsolationFilter 的 ALL 语义一致：公共、我的非公开、或缺 visible 的旧文档。
-        return isPublic || (isMine && !isPublic) || !StringUtils.hasText(visible);
+        // 与 buildIsolationFilter 的 ALL 语义一致：公共或我的非公开；缺元数据默认拒绝其他用户。
+        return isPublic || (isMine && !isPublic);
     }
 
     /**

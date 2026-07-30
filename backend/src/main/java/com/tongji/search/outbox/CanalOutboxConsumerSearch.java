@@ -42,7 +42,7 @@ public class CanalOutboxConsumerSearch {
             for (JsonNode row : rows) {
                 JsonNode payloadNode = row.get("payload");
                 if (payloadNode == null) {
-                    continue;
+                    throw new IllegalArgumentException("outbox 行缺少 payload");
                 }
 
                 JsonNode payload = objectMapper.readTree(payloadNode.asText());
@@ -62,8 +62,11 @@ public class CanalOutboxConsumerSearch {
                     op = text(payload.get("op"));
                     id = asLong(payload.get("id"));
                 }
-                if (!"knowpost".equals(entity) || id == null) {
+                if (!"knowpost".equals(entity)) {
                     continue;
+                }
+                if (id == null || op == null || op.isBlank()) {
+                    throw new IllegalArgumentException("knowpost outbox payload 字段不完整");
                 }
 
                 // 软删与 upsert，均覆盖同一文档 ID；RAG 先删旧切片再按当前 DB 状态重建。
