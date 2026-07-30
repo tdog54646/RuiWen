@@ -39,6 +39,9 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         }
         try {
             Jwt jwt = jwtService.decode(token);
+            if (!"access".equals(jwtService.extractTokenType(jwt))) {
+                throw new IllegalArgumentException("token type must be access");
+            }
             long userId = jwtService.extractUserId(jwt);
             attributes.put(ATTR_USER_ID, userId);
             return true;

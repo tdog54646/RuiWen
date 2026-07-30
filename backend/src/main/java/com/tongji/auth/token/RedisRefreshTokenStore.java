@@ -1,5 +1,6 @@
 package com.tongji.auth.token;
 
+import com.tongji.cache.RedisKeyScanner;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -16,9 +17,11 @@ import java.util.Objects;
 public class RedisRefreshTokenStore implements RefreshTokenStore {
 
     private final StringRedisTemplate redisTemplate;
+    private final RedisKeyScanner keyScanner;
 
-    public RedisRefreshTokenStore(StringRedisTemplate redisTemplate) {
+    public RedisRefreshTokenStore(StringRedisTemplate redisTemplate, RedisKeyScanner keyScanner) {
         this.redisTemplate = redisTemplate;
+        this.keyScanner = keyScanner;
     }
 
     /**
@@ -47,6 +50,12 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
         return Objects.equals("1", redisTemplate.opsForValue().get(key));
     }
 
+    @Override
+    public boolean consumeToken(long userId, String tokenId) {
+        String value = redisTemplate.opsForValue().getAndDelete(key(userId, tokenId));
+        return Objects.equals("1", value);
+    }
+
     /**
      * 撤销单个刷新令牌。
      *
@@ -66,7 +75,7 @@ public class RedisRefreshTokenStore implements RefreshTokenStore {
     @Override
     public void revokeAll(long userId) {
         String pattern = "auth:rt:%d:*".formatted(userId);
-        var keys = redisTemplate.keys(pattern);
+        var keys = keyScanner.scan(pattern);
         if (!keys.isEmpty()) {
             redisTemplate.delete(keys);
         }

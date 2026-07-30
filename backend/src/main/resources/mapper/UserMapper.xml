@@ -92,6 +92,13 @@
         WHERE id = #{id}
     </select>
 
+    <select id="findByIdForUpdate" parameterType="long" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        WHERE id = #{id}
+        FOR UPDATE
+    </select>
+
     <update id="updatePassword">
         UPDATE users
         SET password_hash = #{passwordHash},
@@ -110,7 +117,6 @@
             <if test="school != null">school = #{school},</if>
             <if test="avatar != null">avatar = #{avatar},</if>
             <if test="tagsJson != null">tags_json = #{tagsJson},</if>
-            <if test="email != null">email = #{email},</if>
             updated_at = NOW()
         </set>
         WHERE id = #{id}
@@ -154,6 +160,14 @@
         SELECT COUNT(*)
         FROM users
         WHERE role = #{role}
+    </select>
+
+    <select id="lockSuperAdmins" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        WHERE role = 'SUPER_ADMIN'
+        ORDER BY id
+        FOR UPDATE
     </select>
 
     <select id="countAll" resultType="long">

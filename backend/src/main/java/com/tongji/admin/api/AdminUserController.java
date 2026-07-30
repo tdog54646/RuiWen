@@ -8,10 +8,13 @@ import com.tongji.admin.dto.PageResult;
 import com.tongji.admin.dto.UpdateRoleRequest;
 import com.tongji.admin.dto.UpdateStatusRequest;
 import com.tongji.admin.service.AdminUserService;
+import com.tongji.auth.token.JwtService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -26,6 +29,7 @@ import java.util.Map;
 public class AdminUserController {
 
     private final AdminUserService adminUserService;
+    private final JwtService jwtService;
 
     /**
      * 用户列表/搜索。
@@ -77,8 +81,10 @@ public class AdminUserController {
      * @param request 状态请求。
      */
     @PatchMapping("/{id}/status")
-    public ResponseEntity<Void> updateStatus(@PathVariable long id, @Valid @RequestBody UpdateStatusRequest request) {
-        adminUserService.updateStatus(id, request.status());
+    public ResponseEntity<Void> updateStatus(@PathVariable long id,
+                                             @Valid @RequestBody UpdateStatusRequest request,
+                                             @AuthenticationPrincipal Jwt jwt) {
+        adminUserService.updateStatus(id, request.status(), jwtService.extractUserId(jwt));
         return ResponseEntity.noContent().build();
     }
 

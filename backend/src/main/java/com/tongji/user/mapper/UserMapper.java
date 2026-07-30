@@ -22,6 +22,9 @@ public interface UserMapper {
 
     User findById(@Param("id") Long id);
 
+    /** 锁定指定用户，供管理员敏感变更在事务内做一致性校验。 */
+    User findByIdForUpdate(@Param("id") Long id);
+
     void updatePassword(@Param("id") Long id, @Param("passwordHash") String passwordHash);
 
     void updateProfile(User user);
@@ -40,6 +43,9 @@ public interface UserMapper {
 
     /** 统计指定角色的用户数。 */
     long countByRole(@Param("role") String role);
+
+    /** 锁定全部超级管理员，串行化降级/封禁操作，防止并发绕过最后一名超管保护。 */
+    List<User> lockSuperAdmins();
 
     /** 统计全部用户数。 */
     long countAll();

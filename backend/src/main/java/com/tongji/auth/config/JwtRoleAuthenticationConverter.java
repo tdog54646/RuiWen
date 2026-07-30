@@ -8,6 +8,8 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +32,11 @@ public class JwtRoleAuthenticationConverter implements Converter<Jwt, AbstractAu
     @Override
     @NonNull
     public AbstractAuthenticationToken convert(@NonNull Jwt jwt) {
+        if (!"access".equals(jwtService.extractTokenType(jwt))) {
+            throw new OAuth2AuthenticationException(
+                    new OAuth2Error("invalid_token"),
+                    "仅 access token 可用于接口鉴权");
+        }
         String role = jwtService.extractRole(jwt);
         return new JwtAuthenticationToken(jwt, authoritiesOf(role), jwt.getSubject());
     }

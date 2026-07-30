@@ -7,8 +7,6 @@ export type ProfileUpdateRequest = {
   gender?: Gender
   birthday?: string
   school?: string
-  email?: string
-  phone?: string
   tagJson?: string
 }
 

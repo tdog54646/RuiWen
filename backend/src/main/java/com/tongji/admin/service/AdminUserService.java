@@ -20,6 +20,8 @@ import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 
 /**
  * 后台用户管理服务：列表/搜索/详情/改角色/封禁解封/重置密码/编辑资料。
@@ -88,9 +90,10 @@ public class AdminUserService {
         if (!UserRole.isValid(role)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "非法角色");
         }
-        User user = requireUser(targetId);
+        List<User> superAdmins = userMapper.lockSuperAdmins();
+        User user = requireLockedUser(targetId);
         if (UserRole.SUPER_ADMIN.equals(user.getRole()) && !UserRole.SUPER_ADMIN.equals(role)) {
-            ensureNotLastSuperAdmin();
+            ensureHasAnotherActiveSuperAdmin(superAdmins, targetId);
         }
         userService.updateRole(targetId, role);
     }
@@ -99,13 +102,18 @@ public class AdminUserService {
      * 修改用户状态（封禁/解封）。封禁时撤销全部刷新令牌；禁止封禁最后一个超管。
      */
     @Transactional
-    public void updateStatus(long targetId, String status) {
+    public void updateStatus(long targetId, String status, long operatorId) {
         if (!UserStatus.isValid(status)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "非法状态");
         }
-        User user = requireUser(targetId);
+        List<User> superAdmins = userMapper.lockSuperAdmins();
+        User user = requireLockedUser(targetId);
+        User operator = targetId == operatorId ? user : requireLockedUser(operatorId);
         if (UserRole.SUPER_ADMIN.equals(user.getRole()) && UserStatus.BANNED.equals(status)) {
-            ensureNotLastSuperAdmin();
+            if (!UserRole.SUPER_ADMIN.equals(operator.getRole())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "普通管理员不能封禁超级管理员");
+            }
+            ensureHasAnotherActiveSuperAdmin(superAdmins, targetId);
         }
         userService.updateStatus(targetId, status);
         if (UserStatus.BANNED.equals(status)) {
@@ -130,7 +138,8 @@ public class AdminUserService {
      */
     @Transactional
     public void updateProfile(long targetId, AdminUpdateProfileRequest request) {
-        requireUser(targetId);
+        User current = requireUser(targetId);
+        rejectEmailChange(current.getEmail(), request.email());
         User patch = new User();
         patch.setId(targetId);
         patch.setNickname(request.nickname());
@@ -140,7 +149,6 @@ public class AdminUserService {
         patch.setSchool(request.school());
         patch.setZgId(request.zgId());
         patch.setAvatar(request.avatar());
-        patch.setEmail(request.email());
         userMapper.updateProfile(patch);
     }
 
@@ -149,11 +157,32 @@ public class AdminUserService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND));
     }
 
-    /** 校验是否为最后一个超级管理员，是则禁止降级/封禁。 */
-    private void ensureNotLastSuperAdmin() {
-        long count = userService.countByRole(UserRole.SUPER_ADMIN);
-        if (count <= 1) {
+    private User requireLockedUser(long id) {
+        User user = userMapper.findByIdForUpdate(id);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND);
+        }
+        return user;
+    }
+
+    /** 超管行已被锁定；校验操作后仍至少保留一个处于 ACTIVE 状态的超级管理员。 */
+    private void ensureHasAnotherActiveSuperAdmin(List<User> superAdmins, long targetId) {
+        boolean hasAnotherActive = superAdmins.stream()
+                .anyMatch(user -> !Objects.equals(user.getId(), targetId)
+                        && UserStatus.ACTIVE.equals(user.getStatus()));
+        if (!hasAnotherActive) {
             throw new BusinessException(ErrorCode.LAST_SUPER_ADMIN);
+        }
+    }
+
+    private void rejectEmailChange(String currentEmail, String requestedEmail) {
+        if (requestedEmail == null) {
+            return;
+        }
+        String current = currentEmail == null ? null : currentEmail.trim().toLowerCase(Locale.ROOT);
+        String requested = requestedEmail.trim().toLowerCase(Locale.ROOT);
+        if (!Objects.equals(current, requested)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "邮箱不可修改");
         }
     }
 

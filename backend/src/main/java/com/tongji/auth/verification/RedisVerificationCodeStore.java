@@ -2,13 +2,12 @@ package com.tongji.auth.verification;
 
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.RedisSystemException;
-import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
-import java.util.Map;
-import java.util.Objects;
+import java.util.List;
 
 /**
  * 基于 Redis 的验证码存储实现。
@@ -20,9 +19,36 @@ import java.util.Objects;
 @Component
 public class RedisVerificationCodeStore implements VerificationCodeStore {
 
-    private static final String FIELD_CODE = "code";
-    private static final String FIELD_MAX_ATTEMPTS = "maxAttempts";
-    private static final String FIELD_ATTEMPTS = "attempts";
+    private static final DefaultRedisScript<Long> SAVE_SCRIPT = new DefaultRedisScript<>("""
+            redis.call('HSET', KEYS[1],
+              'code', ARGV[1],
+              'maxAttempts', ARGV[2],
+              'attempts', '0')
+            redis.call('PEXPIRE', KEYS[1], ARGV[3])
+            return 1
+            """, Long.class);
+    private static final DefaultRedisScript<String> VERIFY_SCRIPT = new DefaultRedisScript<>("""
+            if redis.call('EXISTS', KEYS[1]) == 0 then
+              return 'NOT_FOUND:0:0'
+            end
+            local stored = redis.call('HGET', KEYS[1], 'code')
+            local maxAttempts = tonumber(redis.call('HGET', KEYS[1], 'maxAttempts')) or 5
+            local attempts = tonumber(redis.call('HGET', KEYS[1], 'attempts')) or 0
+            if attempts >= maxAttempts then
+              return 'TOO_MANY_ATTEMPTS:' .. attempts .. ':' .. maxAttempts
+            end
+            if stored == ARGV[1] then
+              redis.call('DEL', KEYS[1])
+              return 'SUCCESS:' .. attempts .. ':' .. maxAttempts
+            end
+            attempts = attempts + 1
+            redis.call('HSET', KEYS[1], 'attempts', tostring(attempts))
+            if attempts >= maxAttempts then
+              redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+              return 'TOO_MANY_ATTEMPTS:' .. attempts .. ':' .. maxAttempts
+            end
+            return 'MISMATCH:' .. attempts .. ':' .. maxAttempts
+            """, String.class);
 
     private final StringRedisTemplate redisTemplate;
 
@@ -43,12 +69,13 @@ public class RedisVerificationCodeStore implements VerificationCodeStore {
     @Override
     public void saveCode(String scene, String identifier, String code, Duration ttl, int maxAttempts) {
         String key = buildKey(scene, identifier);
-        HashOperations<String, String, String> ops = redisTemplate.opsForHash();
         try {
-            ops.put(key, FIELD_CODE, code);
-            ops.put(key, FIELD_MAX_ATTEMPTS, String.valueOf(maxAttempts));
-            ops.put(key, FIELD_ATTEMPTS, "0");
-            redisTemplate.expire(key, ttl);
+            redisTemplate.execute(
+                    SAVE_SCRIPT,
+                    List.of(key),
+                    code,
+                    String.valueOf(maxAttempts),
+                    String.valueOf(ttl.toMillis()));
         } catch (DataAccessException ex) {
             throw new RedisSystemException("Failed to save verification code", ex);
         }
@@ -65,31 +92,16 @@ public class RedisVerificationCodeStore implements VerificationCodeStore {
     @Override
     public VerificationCheckResult verify(String scene, String identifier, String code) {
         String key = buildKey(scene, identifier);
-        HashOperations<String, String, String> ops = redisTemplate.opsForHash();
-        Map<String, String> data = ops.entries(key);
-        if (data == null || data.isEmpty()) {
-            return new VerificationCheckResult(VerificationCodeStatus.NOT_FOUND, 0, 0);
+        try {
+            String result = redisTemplate.execute(
+                    VERIFY_SCRIPT,
+                    List.of(key),
+                    code,
+                    String.valueOf(Duration.ofMinutes(30).toSeconds()));
+            return parseResult(result);
+        } catch (DataAccessException ex) {
+            throw new RedisSystemException("Failed to verify verification code", ex);
         }
-        String storedCode = data.get(FIELD_CODE);
-        int maxAttempts = parseInt(data.get(FIELD_MAX_ATTEMPTS), 5);
-        int attempts = parseInt(data.get(FIELD_ATTEMPTS), 0);
-
-        if (attempts >= maxAttempts) {
-            return new VerificationCheckResult(VerificationCodeStatus.TOO_MANY_ATTEMPTS, attempts, maxAttempts);
-        }
-
-        if (Objects.equals(storedCode, code)) {
-            redisTemplate.delete(key);
-            return new VerificationCheckResult(VerificationCodeStatus.SUCCESS, attempts, maxAttempts);
-        }
-
-        int updatedAttempts = attempts + 1;
-        ops.put(key, FIELD_ATTEMPTS, String.valueOf(updatedAttempts));
-        if (updatedAttempts >= maxAttempts) {
-            redisTemplate.expire(key, Duration.ofMinutes(30));
-            return new VerificationCheckResult(VerificationCodeStatus.TOO_MANY_ATTEMPTS, updatedAttempts, maxAttempts);
-        }
-        return new VerificationCheckResult(VerificationCodeStatus.MISMATCH, updatedAttempts, maxAttempts);
     }
 
     /**
@@ -114,22 +126,28 @@ public class RedisVerificationCodeStore implements VerificationCodeStore {
         return "auth:code:%s:%s".formatted(scene, identifier);
     }
 
-    /**
-     * 解析整数字符串，失败返回默认值。
-     *
-     * @param value        待解析字符串。
-     * @param defaultValue 解析失败时的默认值。
-     * @return 整数值。
-     */
-    private static int parseInt(String value, int defaultValue) {
-        if (value == null) {
-            return defaultValue;
+    /** 解析 Lua 返回的“状态:次数:上限”结果。 */
+    static VerificationCheckResult parseResult(String result) {
+        if (result == null || result.isBlank()) {
+            return new VerificationCheckResult(VerificationCodeStatus.NOT_FOUND, 0, 0);
         }
+        String[] parts = result.split(":", 3);
+        VerificationCodeStatus status;
+        try {
+            status = VerificationCodeStatus.valueOf(parts[0]);
+        } catch (IllegalArgumentException ex) {
+            status = VerificationCodeStatus.NOT_FOUND;
+        }
+        int attempts = parts.length > 1 ? parseInt(parts[1]) : 0;
+        int maxAttempts = parts.length > 2 ? parseInt(parts[2]) : 0;
+        return new VerificationCheckResult(status, attempts, maxAttempts);
+    }
+
+    private static int parseInt(String value) {
         try {
             return Integer.parseInt(value);
         } catch (NumberFormatException ex) {
-            return defaultValue;
+            return 0;
         }
     }
 }
-

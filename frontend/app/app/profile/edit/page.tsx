@@ -119,7 +119,6 @@ export default function EditProfilePage() {
     if (genderNormalized) payload.gender = genderNormalized
     if (birthday.trim()) payload.birthday = birthday.trim()
     if (school.trim()) payload.school = school.trim()
-    if (email.trim()) payload.email = email.trim()
     if (skills.length > 0) payload.tagJson = JSON.stringify(skills)
 
     try {
@@ -232,9 +231,9 @@ export default function EditProfilePage() {
                   id="email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="填写邮箱地址"
-                  className={glassInputClass}
+                  readOnly
+                  placeholder="未绑定邮箱"
+                  className={cn(glassInputClass, "opacity-60")}
                 />
               </div>
               <div className="flex flex-col gap-1.5">

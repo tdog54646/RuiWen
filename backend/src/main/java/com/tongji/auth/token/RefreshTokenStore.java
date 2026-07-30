@@ -29,6 +29,11 @@ public interface RefreshTokenStore {
     boolean isTokenValid(long userId, String tokenId);
 
     /**
+     * 原子消费刷新令牌：仅一个并发请求可以取得成功，成功后令牌立即从白名单移除。
+     */
+    boolean consumeToken(long userId, String tokenId);
+
+    /**
      * 撤销指定刷新令牌（从白名单移除）。
      *
      * @param userId  用户 ID。
@@ -43,4 +48,3 @@ public interface RefreshTokenStore {
      */
     void revokeAll(long userId);
 }
-

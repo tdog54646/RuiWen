@@ -283,14 +283,12 @@ public class AuthService {
         long userId = jwtService.extractUserId(jwt);
         String tokenId = jwtService.extractTokenId(jwt);
 
-        if (!refreshTokenStore.isTokenValid(userId, tokenId)) {
-            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
-        }
-
         User user = findUserById(userId).orElseThrow(() -> new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND));
         ensureNotBanned(user);
+        if (!refreshTokenStore.consumeToken(userId, tokenId)) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
         TokenPair tokenPair = jwtService.issueTokenPair(user);
-        refreshTokenStore.revokeToken(userId, tokenId);
         storeRefreshToken(userId, tokenPair);
 
         return mapToken(tokenPair);

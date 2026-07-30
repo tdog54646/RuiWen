@@ -5,6 +5,7 @@ import com.tongji.auth.exception.BusinessException;
 import com.tongji.auth.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -12,6 +13,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 /**
  * 验证码业务服务。
@@ -28,6 +30,13 @@ public class VerificationService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final DateTimeFormatter DAY_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final DefaultRedisScript<Long> DAILY_LIMIT_SCRIPT = new DefaultRedisScript<>("""
+            local count = redis.call('INCR', KEYS[1])
+            if count == 1 then
+              redis.call('PEXPIRE', KEYS[1], ARGV[1])
+            end
+            return count
+            """, Long.class);
 
     private final VerificationCodeStore codeStore;
     private final CodeSender codeSender;
@@ -96,11 +105,10 @@ public class VerificationService {
             return;
         }
         String key = "auth:code:last:" + scene.name() + ":" + identifier;
-        String existing = stringRedisTemplate.opsForValue().get(key);
-        if (existing != null) {
+        Boolean acquired = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", interval);
+        if (!Boolean.TRUE.equals(acquired)) {
             throw new BusinessException(ErrorCode.VERIFICATION_RATE_LIMIT);
         }
-        stringRedisTemplate.opsForValue().set(key, "1", interval);
     }
 
     /**
@@ -116,10 +124,10 @@ public class VerificationService {
         }
         String date = DAY_FORMAT.format(LocalDate.now());
         String key = "auth:code:count:" + scene.name() + ":" + identifier + ":" + date;
-        Long count = stringRedisTemplate.opsForValue().increment(key);
-        if (count != null && count == 1L) {
-            stringRedisTemplate.expire(key, Duration.ofDays(1));
-        }
+        Long count = stringRedisTemplate.execute(
+                DAILY_LIMIT_SCRIPT,
+                List.of(key),
+                String.valueOf(Duration.ofDays(1).toMillis()));
         if (count != null && count > limit) {
             throw new BusinessException(ErrorCode.VERIFICATION_DAILY_LIMIT);
         }

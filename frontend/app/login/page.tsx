@@ -8,7 +8,7 @@ import { Component as LoginPage } from "@/components/ui/animated-characters-logi
 function LoginInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const next = searchParams.get("next") ?? "/app"
+  const next = sanitizeNextPath(searchParams.get("next"))
 
   return (
     <LoginPage
@@ -17,6 +17,26 @@ function LoginInner() {
       }}
     />
   )
+}
+
+function sanitizeNextPath(value: string | null): string {
+  if (
+    !value ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    return "/app"
+  }
+  try {
+    const base = "https://ruiwen.invalid"
+    const resolved = new URL(value, base)
+    if (resolved.origin !== base) return "/app"
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`
+  } catch {
+    return "/app"
+  }
 }
 
 export default function LoginRoute() {
