@@ -288,20 +288,30 @@ function RegisterPage({ onRegisterSuccess }: RegisterPageProps) {
             id="agreeTerms"
             checked={agreeTerms}
             onCheckedChange={(checked) => setAgreeTerms(!!checked)}
+            className="mt-0.5"
           />
-          <Label
-            htmlFor="agreeTerms"
-            className="cursor-pointer pt-0.5 text-sm font-normal leading-relaxed text-[#626762]"
-          >
-            我已阅读并同意
-            <a href="#" className="text-[#2f5d50]" onClick={(e) => e.preventDefault()}>
+          <p className="text-sm font-normal leading-relaxed text-[#626762]">
+            <Label htmlFor="agreeTerms" className="cursor-pointer text-sm font-normal text-[#626762]">
+              我已阅读并同意
+            </Label>{" "}
+            <Link
+              href="/terms"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-sm font-medium text-[#2f5d50] underline decoration-[#9bad9f] underline-offset-4 transition-colors hover:text-[#1d211f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]"
+            >
               《用户协议》
-            </a>
+            </Link>
             和
-            <a href="#" className="text-[#2f5d50]" onClick={(e) => e.preventDefault()}>
+            <Link
+              href="/privacy"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-sm font-medium text-[#2f5d50] underline decoration-[#9bad9f] underline-offset-4 transition-colors hover:text-[#1d211f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5d50]"
+            >
               《隐私政策》
-            </a>
-          </Label>
+            </Link>
+          </p>
         </div>
 
         <div className="flex flex-col gap-2 pt-1">

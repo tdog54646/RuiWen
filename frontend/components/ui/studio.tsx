@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion"
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { LineLogo } from "@/components/brand/line-logo"
+import { SiteFooter } from "@/components/layout/site-footer"
 import { cn } from "@/lib/utils"
 
 const SPRING_EASE = [0.22, 1, 0.36, 1] as const
@@ -284,7 +285,7 @@ export const glassInputClass =
 /* 全屏玻璃壳（用于登录/注册/重置等独立页） */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
-    <div className="app-canvas relative min-h-dvh overflow-hidden">
+    <div className="app-canvas relative min-h-dvh overflow-x-hidden">
       <div className="relative mx-auto grid min-h-dvh w-full max-w-[1280px] lg:grid-cols-[minmax(0,1.12fr)_minmax(28rem,0.88fr)]">
         <aside className="hidden flex-col justify-between border-r border-[#d8d9d2] px-12 py-12 lg:flex xl:px-16 xl:py-14">
           <Link
@@ -306,7 +307,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
             </p>
           </div>
 
-          <span aria-hidden="true" />
+          <SiteFooter align="start" />
         </aside>
 
         <div className="flex min-h-dvh items-center justify-center px-5 py-10 sm:px-10 lg:px-14">
@@ -324,6 +325,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
               <span className="font-display text-lg font-semibold">Line</span>
             </Link>
             {children}
+            <SiteFooter className="mt-10 lg:hidden" />
           </motion.main>
         </div>
       </div>

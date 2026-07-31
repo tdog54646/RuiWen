@@ -1,6 +1,7 @@
 "use client"
 
 import { AuthProviderWrapper } from "@/components/auth/auth-provider"
+import { SiteFooter } from "@/components/layout/site-footer"
 import { TopNav } from "@/components/ui/top-nav"
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         >
           {children}
         </main>
+        <div className="relative mx-auto w-full max-w-[1280px] border-t border-[#deded8] px-4 py-8 sm:px-6 lg:px-8">
+          <SiteFooter />
+        </div>
       </div>
     </AuthProviderWrapper>
   )
