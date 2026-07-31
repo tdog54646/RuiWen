@@ -82,9 +82,9 @@ export default function AdminConversationDetailPage() {
           const isUser = m.role === "user"
           return (
             <div key={m.id} className={cn("flex", isUser ? "justify-start" : "justify-end")}>
-              <div className={cn("max-w-[75%] rounded-xl border p-3", isUser ? "border-slate-200 bg-white" : "border-violet-200 bg-violet-50")}>
+              <div className={cn("max-w-[75%] rounded-xl border p-3", isUser ? "border-slate-200 bg-white" : "border-primary/20 bg-accent")}>
                 <div className="mb-1 flex items-center gap-2">
-                  <Badge className={cn("border-0", isUser ? "bg-slate-100 text-slate-600" : "bg-violet-100 text-violet-700")}>
+                  <Badge className={cn("border-0", isUser ? "bg-slate-100 text-slate-600" : "bg-primary/10 text-primary")}>
                     {isUser ? "用户" : "AI"}
                   </Badge>
                   <span className="text-xs text-slate-400">{new Date(m.createdAt).toLocaleString()}</span>

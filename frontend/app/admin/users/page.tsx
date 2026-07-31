@@ -18,8 +18,8 @@ const STATUS_BADGE: Record<string, string> = {
 
 const ROLE_BADGE: Record<string, string> = {
   USER: "bg-slate-100 text-slate-600",
-  ADMIN: "bg-blue-100 text-blue-700",
-  SUPER_ADMIN: "bg-violet-100 text-violet-700",
+  ADMIN: "bg-primary/10 text-primary",
+  SUPER_ADMIN: "bg-primary text-primary-foreground",
 }
 
 const ROLE_OPTIONS: OptionItem[] = [
@@ -142,7 +142,7 @@ export default function AdminUsersPage() {
           <option value="ACTIVE">正常</option>
           <option value="BANNED">封禁</option>
         </select>
-        <Button onClick={() => { setPage(1); load() }} className="h-9 bg-slate-900 text-white hover:bg-slate-800">
+        <Button onClick={() => { setPage(1); load() }} className="h-9">
           查询
         </Button>
       </div>

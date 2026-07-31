@@ -633,7 +633,7 @@ export default function AdvancedMarkdownEditor({
         onDoubleClick={() => setManualMin(MIN_EDITOR_HEIGHT)}
         className="group/drag flex h-4 cursor-row-resize items-center justify-center border-t border-white/50 bg-white/40 transition-colors hover:bg-white/70 dark:border-white/10 dark:bg-white/5"
       >
-        <span className="h-1 w-10 rounded-full bg-slate-300 transition-colors group-hover/drag:bg-violet-400" />
+        <span className="h-1 w-10 rounded-full bg-slate-300 transition-colors group-hover/drag:bg-primary/60" />
       </div>
     </div>
   );

@@ -12,8 +12,8 @@ import type { AdminMemoryItem, PageResult } from "@/lib/types/admin"
 import { cn } from "@/lib/utils"
 
 const SOURCE_BADGE: Record<string, string> = {
-  auto: "bg-blue-100 text-blue-700",
-  manual: "bg-violet-100 text-violet-700",
+  auto: "bg-primary/10 text-primary",
+  manual: "bg-secondary text-secondary-foreground",
 }
 
 export default function AdminMemoriesPage() {
@@ -94,7 +94,7 @@ export default function AdminMemoriesPage() {
           <option value="auto">AI 自动(auto)</option>
           <option value="manual">用户手写(manual)</option>
         </select>
-        <Button onClick={() => { setPage(1); load() }} className="h-9 bg-slate-900 text-white hover:bg-slate-800">查询</Button>
+        <Button onClick={() => { setPage(1); load() }} className="h-9">查询</Button>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
@@ -132,7 +132,7 @@ export default function AdminMemoriesPage() {
                     type="button"
                     aria-label="切换启用"
                     onClick={() => run(m.id, () => adminService.updateMemoryEnabled(tokens!.accessToken, m.id, !m.enabled))}
-                    className={cn("relative h-5 w-9 rounded-full transition-colors", m.enabled ? "bg-emerald-500" : "bg-slate-300")}
+                    className={cn("relative h-5 w-9 rounded-full transition-colors", m.enabled ? "bg-primary" : "bg-slate-300")}
                   >
                     <span className={cn("absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform", m.enabled && "translate-x-4")} />
                   </button>

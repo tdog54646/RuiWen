@@ -153,12 +153,10 @@ export function StatusChip({
 }: {
   icon?: ElementType
   children: ReactNode
-  tone?: "default" | "violet" | "cyan" | "amber" | "emerald"
+  tone?: "default" | "amber" | "emerald"
 }) {
   const toneClass = {
     default: "text-[#6f746f]",
-    violet: "text-[#665f79]",
-    cyan: "text-[#3f6b63]",
     amber: "text-[#806b3d]",
     emerald: "text-[#2f5d50]",
   }[tone]

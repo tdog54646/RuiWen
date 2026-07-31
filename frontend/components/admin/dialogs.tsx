@@ -129,8 +129,8 @@ export function ConfirmDialog({
         </Button>
         <Button
           className={cn(
-            "h-9 text-white",
-            state?.danger ? "bg-red-600 hover:bg-red-700" : "bg-slate-900 hover:bg-slate-800",
+            "h-9",
+            state?.danger && "bg-red-600 text-white hover:bg-red-700",
           )}
           disabled={loading}
           onClick={handleConfirm}
@@ -147,15 +147,6 @@ export function ConfirmDialog({
 
 export type OptionItem = { value: string; label: string; desc?: string }
 
-const ACCENT: Record<
-  "violet" | "slate" | "blue",
-  { border: string; bg: string; radio: string }
-> = {
-  violet: { border: "border-violet-500", bg: "bg-violet-50", radio: "accent-violet-600" },
-  slate: { border: "border-slate-700", bg: "bg-slate-50", radio: "accent-slate-700" },
-  blue: { border: "border-blue-500", bg: "bg-blue-50", radio: "accent-blue-600" },
-}
-
 export function OptionDialog({
   open,
   title,
@@ -167,7 +158,6 @@ export function OptionDialog({
   onClose,
   confirmText = "确认",
   confirmDisabled = false,
-  accent = "violet",
 }: {
   open: boolean
   title: ReactNode
@@ -179,10 +169,8 @@ export function OptionDialog({
   onClose: () => void
   confirmText?: string
   confirmDisabled?: boolean
-  accent?: keyof typeof ACCENT
 }) {
   const [loading, setLoading] = useState(false)
-  const a = ACCENT[accent]
   const guardedClose = loading ? () => {} : onClose
 
   const handleConfirm = async () => {
@@ -206,7 +194,7 @@ export function OptionDialog({
               className={cn(
                 "flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors",
                 active
-                  ? cn(a.border, a.bg)
+                  ? "border-primary bg-accent ring-1 ring-primary/30"
                   : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
               )}
             >
@@ -215,7 +203,7 @@ export function OptionDialog({
                 name="option"
                 checked={active}
                 onChange={() => onChange(opt.value)}
-                className={cn("size-4 shrink-0", a.radio)}
+                className="size-4 shrink-0 accent-primary"
               />
               <div className="min-w-0">
                 <div className="text-sm font-medium text-slate-800">{opt.label}</div>
@@ -230,7 +218,7 @@ export function OptionDialog({
           取消
         </Button>
         <Button
-          className="h-9 bg-slate-900 text-white hover:bg-slate-800"
+          className="h-9"
           disabled={loading || confirmDisabled}
           onClick={handleConfirm}
         >

@@ -18,10 +18,10 @@ import { Loader2, RefreshCw, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const VISIBLE_BADGE: Record<string, string> = {
-  public: "bg-emerald-100 text-emerald-700",
+  public: "bg-primary/10 text-primary",
   private: "bg-slate-100 text-slate-600",
-  followers: "bg-blue-100 text-blue-700",
-  school: "bg-violet-100 text-violet-700",
+  followers: "bg-accent text-accent-foreground",
+  school: "bg-secondary text-secondary-foreground",
   unlisted: "bg-amber-100 text-amber-700",
 }
 
@@ -232,7 +232,7 @@ export default function AdminIndexPage() {
               <option value="unlisted">未列出</option>
             </select>
             <Button
-              className="h-9 bg-slate-900 text-white hover:bg-slate-800"
+              className="h-9"
               onClick={searchPosts}
               disabled={postsLoading}
             >
@@ -293,7 +293,7 @@ export default function AdminIndexPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Button
-                          className="h-8 bg-slate-900 px-3 text-xs text-white hover:bg-slate-800"
+                          className="h-8 px-3 text-xs"
                           disabled={busy || !!rebuild?.running}
                           onClick={() => rebuildPost(post)}
                         >
@@ -354,7 +354,7 @@ export default function AdminIndexPage() {
         <div className="flex items-center justify-between">
           <div className="text-sm font-medium text-slate-500">全量重建</div>
           <Button
-            className="h-9 bg-slate-900 text-white hover:bg-slate-800"
+            className="h-9"
             disabled={!!rebuild?.running}
             onClick={startRebuildAll}
           >
@@ -368,7 +368,7 @@ export default function AdminIndexPage() {
               {rebuild.total > 0 && (
                 <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                   <div
-                    className="h-full bg-slate-900 transition-all"
+                    className="h-full bg-primary transition-all"
                     style={{ width: `${Math.round((rebuild.done / rebuild.total) * 100)}%` }}
                   />
                 </div>

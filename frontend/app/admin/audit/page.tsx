@@ -69,7 +69,7 @@ export default function AdminAuditPage() {
           <option value="CODE">验证码</option>
           <option value="REGISTER">注册</option>
         </select>
-        <Button onClick={() => { setPage(1); load() }} className="h-9 bg-slate-900 text-white hover:bg-slate-800">查询</Button>
+        <Button onClick={() => { setPage(1); load() }} className="h-9">查询</Button>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}

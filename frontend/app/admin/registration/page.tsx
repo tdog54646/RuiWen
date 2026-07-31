@@ -95,7 +95,7 @@ export default function AdminRegistrationPage() {
               onClick={() => setEnabled(!enabled)}
               className={cn(
                 "relative h-6 w-11 rounded-full transition-colors",
-                enabled ? "bg-violet-600" : "bg-slate-300",
+                enabled ? "bg-primary" : "bg-slate-300",
               )}
             >
               <span
@@ -122,14 +122,14 @@ export default function AdminRegistrationPage() {
                     className={cn(
                       "relative flex flex-col gap-2 rounded-xl border p-5 text-left transition-all",
                       active
-                        ? "border-violet-500 bg-violet-50 ring-1 ring-violet-500"
+                        ? "border-primary bg-accent ring-1 ring-primary/30"
                         : "border-slate-200 bg-white hover:border-slate-300",
                     )}
                   >
                     <div className="flex items-center gap-2">
-                      <Icon className={cn("size-5", active ? "text-violet-600" : "text-slate-500")} />
+                      <Icon className={cn("size-5", active ? "text-primary" : "text-slate-500")} />
                       <span className="text-sm font-semibold text-slate-800">{opt.title}</span>
-                      {active && <Check className="ml-auto size-4 text-violet-600" />}
+                      {active && <Check className="ml-auto size-4 text-primary" />}
                     </div>
                     <p className="text-xs text-slate-500">{opt.desc}</p>
                   </button>
@@ -141,7 +141,7 @@ export default function AdminRegistrationPage() {
           {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
           {message && <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-600">{message}</div>}
 
-          <Button onClick={handleSave} disabled={saving} className="bg-slate-900 text-white hover:bg-slate-800">
+          <Button onClick={handleSave} disabled={saving}>
             {saving ? "保存中..." : "保存策略"}
           </Button>
         </div>

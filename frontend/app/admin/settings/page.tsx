@@ -83,7 +83,7 @@ export default function AdminSettingsPage() {
                   <Input value={announcement} onChange={(e) => setAnnouncement(e.target.value)} className="h-9" placeholder="留空则不展示" />
                 </div>
               </div>
-              <Button onClick={handleSave} disabled={saving} className="bg-slate-900 text-white hover:bg-slate-800">
+              <Button onClick={handleSave} disabled={saving}>
                 {saving ? "保存中..." : "保存配置"}
               </Button>
             </div>

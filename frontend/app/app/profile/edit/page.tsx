@@ -141,11 +141,11 @@ export default function EditProfilePage() {
         subtitle="完善信息，帮助同学们更快认识你"
         badge={
           isSaving ? (
-            <StatusChip icon={Loader2} tone="violet">
+            <StatusChip icon={Loader2} tone="emerald">
               保存中
             </StatusChip>
           ) : (
-            <StatusChip tone="cyan">资料设置</StatusChip>
+            <StatusChip>资料设置</StatusChip>
           )
         }
       />
@@ -306,7 +306,7 @@ export default function EditProfilePage() {
                 </Label>
                 <textarea
                   id="bio"
-                  className="min-h-[120px] w-full resize-y rounded-xl border border-white/60 bg-white/50 p-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white/70"
+                  className="min-h-[120px] w-full resize-y rounded-xl border border-[#d8d9d2] bg-[#fbfbf8] p-3 text-sm outline-none transition-colors placeholder:text-[#969994] focus:border-[#2f5d50] focus:bg-[#fbfbf8]"
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="介绍一下自己..."
@@ -336,7 +336,7 @@ export default function EditProfilePage() {
           <Button
             type="submit"
             disabled={isSaving}
-            className="gap-1.5 bg-gradient-to-r from-cyan-500 to-violet-600 text-white"
+            className="min-w-24 gap-1.5"
           >
             {isSaving ? (
               <Loader2 className="size-3.5 animate-spin" />

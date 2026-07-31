@@ -111,7 +111,7 @@ export default function PostDetailPage() {
             {uniqueTags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-violet-100/70 px-2 py-0.5 text-[11px] font-medium text-violet-700"
+                className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
               >
                 #{tag}
               </span>
