@@ -1,14 +1,39 @@
 "use client"
 
-import { FileText, Tag } from "lucide-react"
+import { useState } from "react"
+import { Check, FileText, Loader2, Send, Tag } from "lucide-react"
 import { MarkdownRenderer } from "@/components/ui/markdown-renderer"
+import { knowpostService } from "@/lib/api/knowpost"
 import type { DraftPayload } from "@/lib/types"
 
 /**
- * AI 录入文章生成的草稿卡片：展示标题/标签/正文预览，提示用户回复「发布」确认或说明修改。
- * 忠实走法 B（纯对话确认），不放发布按钮。
+ * AI 只能生成草稿；发布必须由用户在本卡片中明确点击并再次确认。
+ * 发布接口绑定卡片携带的精确 postId，不存在“最近草稿”回退。
  */
 export function DraftCard({ draft }: { draft: DraftPayload }) {
+  const [status, setStatus] = useState<"idle" | "publishing" | "published">(
+    "idle",
+  )
+  const [error, setError] = useState<string | null>(null)
+
+  const publish = async () => {
+    if (status !== "idle") return
+    const confirmed = window.confirm(
+      `确认发布《${draft.title || "未命名文章"}》吗？发布后将按当前可见性展示。`,
+    )
+    if (!confirmed) return
+
+    setStatus("publishing")
+    setError(null)
+    try {
+      await knowpostService.publish(draft.postId)
+      setStatus("published")
+    } catch (e) {
+      setStatus("idle")
+      setError(e instanceof Error ? e.message : "发布失败，请稍后重试")
+    }
+  }
+
   return (
     <div className="mt-4 overflow-hidden rounded-xl bg-[#efefe9] p-4">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-[#626762]">
@@ -38,8 +63,36 @@ export function DraftCard({ draft }: { draft: DraftPayload }) {
           </div>
         )}
         <div className="rounded-lg bg-[#e7eee9] px-3 py-2 text-sm text-[#59615c]">
-          确认无误请回复「发布」即可发布；需要修改请直接说明（如改标题、调整内容）。
+          发布不会由 AI 自动执行。请核对内容后点击下方按钮；需要修改可继续在对话中说明。
         </div>
+        <button
+          type="button"
+          onClick={() => void publish()}
+          disabled={status !== "idle"}
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#1d211f] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#2f5d50] disabled:cursor-not-allowed disabled:bg-[#a4a7a2]"
+        >
+          {status === "publishing" ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              正在发布
+            </>
+          ) : status === "published" ? (
+            <>
+              <Check className="size-4" />
+              已发布
+            </>
+          ) : (
+            <>
+              <Send className="size-4" />
+              确认发布
+            </>
+          )}
+        </button>
+        {error && (
+          <p role="alert" className="text-sm text-[#a33a32]">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   )

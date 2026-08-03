@@ -79,4 +79,14 @@ class QaPromptAssemblerTest {
         List<Message> msgs = assembler.assemble("你好", List.of(), List.of(), List.of());
         assertEquals("你好", msgs.get(msgs.size() - 1).getText());
     }
+
+    @Test
+    void systemPrompt_requiresUiConfirmationAndNeverAuthorizesModelPublishing() {
+        List<Message> msgs = assembler.assemble("发布刚才的文章", List.of(), List.of(), List.of());
+        String system = msgs.get(0).getText();
+
+        assertTrue(system.contains("确认发布"), "system prompt should direct the user to the confirmation button");
+        assertTrue(system.contains("没有发布文章的工具"), "model must be told it cannot publish");
+        assertFalse(system.contains("`publish_post`"), "publish tool must not be advertised to the model");
+    }
 }
