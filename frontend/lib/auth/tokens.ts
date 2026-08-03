@@ -1,7 +1,7 @@
 // 保存认证令牌的 localStorage key。
-const STORAGE_KEY = "line_auth_tokens"
+export const AUTH_TOKENS_STORAGE_KEY = "line_auth_tokens"
 // 保存当前登录用户信息的 localStorage key。
-const USER_STORAGE_KEY = "line_current_user"
+export const AUTH_USER_STORAGE_KEY = "line_current_user"
 
 // 前端认证令牌结构：accessToken 用于接口鉴权，refreshToken 用于续期。
 export type AuthTokens = {
@@ -19,7 +19,7 @@ function isBrowser() {
 export function readStoredTokens(): AuthTokens | null {
   if (!isBrowser()) return null
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(AUTH_TOKENS_STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as AuthTokens
     // 缺少任一关键字段时视为无效缓存，交给调用方按未登录处理。
@@ -36,17 +36,17 @@ export function readStoredTokens(): AuthTokens | null {
 export function persistTokens(tokens: AuthTokens | null) {
   if (!isBrowser()) return
   if (!tokens) {
-    localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(AUTH_TOKENS_STORAGE_KEY)
     return
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens))
+  localStorage.setItem(AUTH_TOKENS_STORAGE_KEY, JSON.stringify(tokens))
 }
 
 // 从 localStorage 读取当前用户信息，并由调用方通过泛型指定返回类型。
 export function readStoredUser<T>(): T | null {
   if (!isBrowser()) return null
   try {
-    const raw = localStorage.getItem(USER_STORAGE_KEY)
+    const raw = localStorage.getItem(AUTH_USER_STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
     // 用户缓存必须是对象，避免把异常值当作用户信息返回。
@@ -62,11 +62,11 @@ export function readStoredUser<T>(): T | null {
 export function persistUser<T>(user: T | null) {
   if (!isBrowser()) return
   if (!user) {
-    localStorage.removeItem(USER_STORAGE_KEY)
+    localStorage.removeItem(AUTH_USER_STORAGE_KEY)
     return
   }
   try {
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
+    localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user))
   } catch {
     // localStorage 写入失败不阻塞登录流程。
     // ignore
@@ -76,6 +76,6 @@ export function persistUser<T>(user: T | null) {
 // 清除认证令牌和当前用户缓存，通常用于退出登录或登录状态失效。
 export function clearAll() {
   if (!isBrowser()) return
-  localStorage.removeItem(STORAGE_KEY)
-  localStorage.removeItem(USER_STORAGE_KEY)
+  localStorage.removeItem(AUTH_TOKENS_STORAGE_KEY)
+  localStorage.removeItem(AUTH_USER_STORAGE_KEY)
 }

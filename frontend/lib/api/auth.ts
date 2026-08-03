@@ -47,11 +47,13 @@ export const authService = {
       body: { idToken } as GoogleLoginRequest,
     }),
 
-  logout: (payload: LogoutRequest, accessToken: string) =>
+  // 登出只凭 Refresh Token 撤销会话。显式禁用默认的 Access Token 注入，
+  // 避免 Access Token 过期时被资源服务器过滤器提前拦截，导致服务端令牌未撤销。
+  logout: (payload: LogoutRequest) =>
     apiFetch<void>(`${AUTH_PREFIX}/logout`, {
       method: "POST",
       body: payload,
-      accessToken,
+      accessToken: null,
     }),
 
   fetchCurrentUser: (accessToken: string) =>
