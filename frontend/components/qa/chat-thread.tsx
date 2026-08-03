@@ -26,17 +26,26 @@ export function ChatThread({
   suggestions?: string[]
   onSuggestion?: (text: string) => void
 }) {
-  const endRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const showEmpty =
     messages.length === 0 && !isStreaming && !streamingContent
 
   useEffect(() => {
     if (showEmpty) return
-    endRef.current?.scrollIntoView({ behavior: "smooth" })
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: isStreaming ? "auto" : "smooth",
+    })
   }, [messages, streamingContent, streamingStatus, isStreaming, showEmpty])
 
   return (
-    <div className={cn("overflow-y-auto px-4 py-6 md:px-8", className)}>
+    <div
+      ref={scrollContainerRef}
+      className={cn("overflow-y-auto px-4 py-6 md:px-8", className)}
+    >
       <div className="mx-auto w-full max-w-3xl space-y-7">
         {showEmpty ? (
           <EmptyState suggestions={suggestions} onSuggestion={onSuggestion} />
@@ -55,7 +64,6 @@ export function ChatThread({
             )}
           </AnimatePresence>
         )}
-        <div ref={endRef} />
       </div>
     </div>
   )
