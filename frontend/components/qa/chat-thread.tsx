@@ -12,6 +12,7 @@ import type { DraftPayload, MessageRole, QaMessage, SourceArticle } from "@/lib/
 export function ChatThread({
   messages,
   streamingContent,
+  streamingStatus,
   isStreaming,
   className,
   suggestions,
@@ -19,6 +20,7 @@ export function ChatThread({
 }: {
   messages: QaMessage[]
   streamingContent: string
+  streamingStatus?: string | null
   isStreaming: boolean
   className?: string
   suggestions?: string[]
@@ -31,7 +33,7 @@ export function ChatThread({
   useEffect(() => {
     if (showEmpty) return
     endRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, streamingContent, isStreaming, showEmpty])
+  }, [messages, streamingContent, streamingStatus, isStreaming, showEmpty])
 
   return (
     <div className={cn("overflow-y-auto px-4 py-6 md:px-8", className)}>
@@ -47,6 +49,7 @@ export function ChatThread({
               <MessageItem
                 role="assistant"
                 content={streamingContent}
+                statusText={streamingStatus}
                 streaming={isStreaming}
               />
             )}
@@ -109,6 +112,7 @@ function MessageItem({
   sources,
   draft,
   imageUrls,
+  statusText,
 }: {
   role: MessageRole
   content: string
@@ -116,6 +120,7 @@ function MessageItem({
   sources?: SourceArticle[]
   draft?: DraftPayload
   imageUrls?: string[]
+  statusText?: string | null
 }) {
   if (role === "user") {
     const imgs = imageUrls && imageUrls.length > 0 ? imageUrls : undefined
@@ -160,7 +165,10 @@ function MessageItem({
         {content ? (
           <MarkdownRenderer content={content} className="prose-sm max-w-none" />
         ) : (
-          <span className="text-sm text-slate-400">思考中…</span>
+          <span className="text-sm text-slate-400">{statusText || "思考中…"}</span>
+        )}
+        {content && streaming && statusText && (
+          <div className="mt-2 text-xs text-[#7a7e79]">{statusText}</div>
         )}
         {streaming && (
           <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-[#2f5d50] align-middle" />

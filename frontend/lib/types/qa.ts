@@ -63,6 +63,12 @@ export type QaStreamDeltaEvent = {
   content: string
 }
 
+export type QaStreamStatusEvent = {
+  type: "status"
+  stage: "thinking" | "retrieving" | "generating" | "drafting" | "recognizing"
+  message: string
+}
+
 export type QaStreamDoneEvent = { type: "done" }
 
 export type QaStreamErrorEvent = {
@@ -85,6 +91,7 @@ export type QaStreamDraftEvent = {
 
 export type QaStreamEvent =
   | QaStreamMetaEvent
+  | QaStreamStatusEvent
   | QaStreamDeltaEvent
   | QaStreamDoneEvent
   | QaStreamSourcesEvent

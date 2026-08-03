@@ -31,6 +31,7 @@ export default function QAPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<QaMessage[]>([])
   const [streamingContent, setStreamingContent] = useState("")
+  const [streamingStatus, setStreamingStatus] = useState<string | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [memOpen, setMemOpen] = useState(false)
@@ -69,6 +70,7 @@ export default function QAPage() {
     setActiveId(id)
     streamBuf.current = ""
     setStreamingContent("")
+    setStreamingStatus(null)
     setError(null)
     try {
       setMessages(await qaChatService.listMessages(id))
@@ -85,6 +87,7 @@ export default function QAPage() {
       setActiveId(c.id)
       setMessages([])
       setStreamingContent("")
+      setStreamingStatus(null)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : "创建会话失败")
@@ -122,6 +125,7 @@ export default function QAPage() {
     pendingSourcesRef.current = undefined
     pendingDraftRef.current = undefined
     setStreamingContent("")
+    setStreamingStatus(null)
     if (text.trim()) {
       setMessages((prev) => [
         ...prev,
@@ -162,6 +166,7 @@ export default function QAPage() {
       pendingSourcesRef.current = undefined
       pendingDraftRef.current = undefined
       setStreamingContent("")
+      setStreamingStatus("正在连接 AI")
       setError(null)
       setIsStreaming(true)
 
@@ -183,9 +188,12 @@ export default function QAPage() {
                 setActiveId(evt.conversationId)
                 refreshConversations()
               }
+            } else if (evt.type === "status") {
+              setStreamingStatus(evt.message)
             } else if (evt.type === "delta") {
               streamBuf.current += evt.content
               setStreamingContent(streamBuf.current)
+              if (evt.content) setStreamingStatus(null)
             } else if (evt.type === "sources") {
               pendingSourcesRef.current = evt.items
             } else if (evt.type === "draft") {
@@ -196,6 +204,7 @@ export default function QAPage() {
                 preview: evt.preview,
               }
             } else if (evt.type === "error") {
+              setStreamingStatus(null)
               setError(evt.message)
             }
             // done 事件：await 结束后统一 finalize
@@ -212,6 +221,7 @@ export default function QAPage() {
       } finally {
         if (abortRef.current === controller) {
           abortRef.current = null
+          setStreamingStatus(null)
           setIsStreaming(false)
         }
       }
@@ -321,6 +331,7 @@ export default function QAPage() {
             className="min-h-0 flex-1"
             messages={messages}
             streamingContent={streamingContent}
+            streamingStatus={streamingStatus}
             isStreaming={isStreaming}
             suggestions={SUGGESTIONS}
             onSuggestion={send}

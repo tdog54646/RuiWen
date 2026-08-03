@@ -35,6 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
@@ -87,7 +88,7 @@ public class QaChatService {
      *
      * @param userId 当前用户 ID
      * @param req    请求体
-     * @return SSE 事件流，事件 data 为 JSON：meta / delta / done / error
+     * @return SSE 事件流，事件 data 为 JSON：meta / status / delta / sources / draft / done / error
      */
     public Flux<ServerSentEvent<String>> streamChat(long userId, QaChatRequest req) {
         String question = req.question() == null ? "" : req.question().trim();
@@ -147,9 +148,10 @@ public class QaChatService {
         // 5) RAG 上下文（按用户隔离过滤）——仅当模型调用工具时才真正检索，避免每次提问都检索
         RetrievalContext ctx = RetrievalContext.of(userId, RetrievalContext.parseScope(req.scope()));
         List<SourceRef> sourcesAcc = Collections.synchronizedList(new ArrayList<>());
-        FunctionToolCallback kbTool = buildKnowledgeBaseTool(question, topK, ctx, sourcesAcc);
+        Sinks.Many<ServerSentEvent<String>> statusSink = Sinks.many().unicast().onBackpressureBuffer();
+        FunctionToolCallback kbTool = buildKnowledgeBaseTool(question, topK, ctx, sourcesAcc, statusSink);
         AtomicReference<DraftPayload> draftAcc = new AtomicReference<>();
-        FunctionToolCallback draftTool = buildDraftPostTool(userId, draftAcc);
+        FunctionToolCallback draftTool = buildDraftPostTool(userId, draftAcc, statusSink);
 
         // 6) 组装消息列表（不再预注入 RAG 上下文，由工具按需检索）
         // 用户附带图片时：额外注册图片识别工具（QVQ），并在喂给 LLM 的文本中提示图片存在
@@ -162,7 +164,7 @@ public class QaChatService {
         // 用户必须在前端草稿卡片中二次确认，由普通的鉴权发布接口发布精确 postId。
         List<FunctionToolCallback> tools = new ArrayList<>(List.of(kbTool, draftTool));
         if (hasImage) {
-            tools.add(buildRecognizeImageTool(imageUrls, question));
+            tools.add(buildRecognizeImageTool(imageUrls, question, statusSink));
         }
 
         // 预生成 assistant 消息 ID（用于 meta 事件与异步落库）
@@ -192,11 +194,17 @@ public class QaChatService {
                 .doOnCancel(() -> {
                     log.info("QA stream cancelled by client (conv={})", conversationId);
                     persistAnswer(userId, conversationId, assistantMessageId, fragments, true);
-                });
+                })
+                .doFinally(signalType -> statusSink.tryEmitComplete());
 
-        // meta 首发 → LLM 增量 → sources（命中知识库时）→ done
-        return Flux.just(sse(metaJson))
-                .concatWith(llmEvents)
+        Flux<ServerSentEvent<String>> liveEvents = Flux.merge(statusSink.asFlux(), llmEvents);
+
+        // meta 与初始状态立即首发 → 工具状态/LLM 增量交错输出 → sources/draft → done
+        return Flux.just(
+                        sse(metaJson),
+                        sse(statusNode("thinking", "正在分析问题"))
+                )
+                .concatWith(liveEvents)
                 .concatWith(Flux.defer(() -> {
                     List<ServerSentEvent<String>> tail = new ArrayList<>();
                     if (!sourcesAcc.isEmpty()) {
@@ -337,11 +345,16 @@ public class QaChatService {
      * 构建「知识库检索」工具：模型按需调用，仅在命中时检索并记录来源。
      * 闭包捕获当前问题的检索参数与来源累加器；检索异常时降级为无上下文，不中断对话。
      */
-    private FunctionToolCallback buildKnowledgeBaseTool(String question, int topK,
-                                                        RetrievalContext ctx, List<SourceRef> sourcesAcc) {
+    private FunctionToolCallback buildKnowledgeBaseTool(
+            String question,
+            int topK,
+            RetrievalContext ctx,
+            List<SourceRef> sourcesAcc,
+            Sinks.Many<ServerSentEvent<String>> statusSink) {
         return FunctionToolCallback.builder("search_knowledge_base", (KbSearchInput in) -> {
                     String q = (in != null && in.query() != null && !in.query().isBlank())
                             ? in.query() : question;
+                    emitStatus(statusSink, "retrieving", "正在检索知识库");
                     try {
                         List<RetrievalChunk> chunks = hybridSearchService.hybridSearch(q, topK, ctx);
                         for (RetrievalChunk c : chunks) {
@@ -351,6 +364,8 @@ public class QaChatService {
                     } catch (Exception e) {
                         log.warn("KB tool retrieval failed: {}", e.getMessage());
                         return "（知识库检索失败，请结合常识直接作答，不要编造来源）";
+                    } finally {
+                        emitStatus(statusSink, "generating", "正在生成回答");
                     }
                 })
                 .description("当用户提问涉及知识库内容时，检索相关文章片段。闲聊、自我介绍、通用常识问题不要调用。")
@@ -361,13 +376,17 @@ public class QaChatService {
     /**
      * 构建「录入文章」工具：收齐 title/topic 后由后端生成正文并落库为草稿，草稿摘要写入 draftAcc。
      */
-    private FunctionToolCallback buildDraftPostTool(long userId, AtomicReference<DraftPayload> draftAcc) {
+    private FunctionToolCallback buildDraftPostTool(
+            long userId,
+            AtomicReference<DraftPayload> draftAcc,
+            Sinks.Many<ServerSentEvent<String>> statusSink) {
         return FunctionToolCallback.builder("draft_post", (DraftPostInput in) -> {
                     String title = in.title();
                     String topic = in.topic();
                     if (title == null || title.isBlank() || topic == null || topic.isBlank()) {
                         return "缺少必填字段 title 或 topic，请先向用户询问后再调用本工具。";
                     }
+                    emitStatus(statusSink, "drafting", "正在生成文章草稿");
                     try {
                         List<String> tags = in.tags() == null ? List.of() : in.tags();
                         PostDraftService.DraftResult r = postDraftService.createDraft(userId, title.trim(), topic.trim(), tags);
@@ -377,6 +396,8 @@ public class QaChatService {
                     } catch (Exception e) {
                         log.warn("draft_post failed (user={})", userId, e);
                         return "草稿生成失败，请稍后重试。";
+                    } finally {
+                        emitStatus(statusSink, "generating", "正在整理回答");
                     }
                 })
                 .description("录入一篇新文章并生成草稿。调用前必须先从用户处取得 title（标题）与 topic（主题要点）；"
@@ -390,11 +411,19 @@ public class QaChatService {
      * <p>图片 URL 列表经闭包捕获（不让 LLM 复述 URL，避免传错）；LLM 可选传入 query 描述关注点，
      * 缺省时用本次提问作为识别意图。识别失败在服务内部降级为提示串，不抛异常。
      */
-    private FunctionToolCallback buildRecognizeImageTool(List<String> imageUrls, String question) {
+    private FunctionToolCallback buildRecognizeImageTool(
+            List<String> imageUrls,
+            String question,
+            Sinks.Many<ServerSentEvent<String>> statusSink) {
         return FunctionToolCallback.builder("recognize_image", (RecognizeImageInput in) -> {
                     String focus = (in != null && in.query() != null && !in.query().isBlank())
                             ? in.query() : question;
-                    return imageRecognitionService.recognize(imageUrls, focus);
+                    emitStatus(statusSink, "recognizing", "正在识别图片");
+                    try {
+                        return imageRecognitionService.recognize(imageUrls, focus);
+                    } finally {
+                        emitStatus(statusSink, "generating", "正在生成回答");
+                    }
                 })
                 .description("识别用户本次附带的图片（可能多张）并返回内容描述。仅当用户本次消息附带图片时调用；"
                         + "query 可选，传入用户对图片的具体问题或关注点，缺省时整体描述图片。"
@@ -516,5 +545,16 @@ public class QaChatService {
         return objectMapper.createObjectNode()
                 .put("type", "error")
                 .put("message", message);
+    }
+
+    private ObjectNode statusNode(String stage, String message) {
+        return objectMapper.createObjectNode()
+                .put("type", "status")
+                .put("stage", stage)
+                .put("message", message);
+    }
+
+    private void emitStatus(Sinks.Many<ServerSentEvent<String>> sink, String stage, String message) {
+        sink.tryEmitNext(sse(statusNode(stage, message)));
     }
 }

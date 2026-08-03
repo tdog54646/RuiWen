@@ -7,9 +7,11 @@ import com.tongji.qa.api.dto.ConversationResponse;
 import com.tongji.qa.api.dto.MessageResponse;
 import com.tongji.qa.api.dto.QaChatRequest;
 import com.tongji.qa.service.QaChatService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
@@ -42,7 +44,12 @@ public class QaChatController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chat(@AuthenticationPrincipal Jwt jwt,
-                                              @RequestBody QaChatRequest request) {
+                                              @RequestBody QaChatRequest request,
+                                              HttpServletResponse response) {
+        // 双保险：即使前置代理配置被调整，也通过 Nginx 的 X-Accel 协议明确禁用
+        // SSE 响应缓冲；no-transform 防止中间层压缩或改写事件边界。
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, no-transform");
         long userId = jwtService.extractUserId(jwt);
         return qaChatService.streamChat(userId, request);
     }
