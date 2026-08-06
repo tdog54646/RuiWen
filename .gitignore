@@ -45,3 +45,9 @@ CLAUDE.md
 
 # 本地代码审计、修复说明与功能测试报告（不提交仓库）
 /local-reports/
+
+# 本地 RAG 评测与调优代码、数据和报告（不提交仓库）
+/.local/rag-reports/
+/backend/src/main/java/com/tongji/llm/rag/eval/
+/backend/src/test/java/com/tongji/llm/rag/eval/
+/backend/src/test/resources/rag-eval/
