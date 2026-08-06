@@ -116,6 +116,14 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-DLlmjIqnQ5YZCdXc3NfBHalC6mRMihq7vO98n4rWehKOIfqF}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ELASTICSEARCH_URIS: http://elasticsearch:9200
+      # 索引身份必须由发布包固定覆盖；服务器旧 env 可能仍指向 legacy 物理索引。
+      VECTORSTORE_INITIALIZE_SCHEMA: "false"
+      VECTORSTORE_INDEX_NAME: ruiwen-ai-read
+      RAG_INDEX_ALIAS: ruiwen-ai-read
+      RAG_INDEX_LEGACY_NAME: ruiwen-ai-index
+      RAG_INDEX_VERSION: "2"
+      RAG_INDEX_ANALYZER: ik_max_word
+      RAG_INDEX_SEARCH_ANALYZER: ik_smart
       CANAL_HOST: canal
       CANAL_PORT: 11111
       TZ: ${TZ:-Asia/Shanghai}

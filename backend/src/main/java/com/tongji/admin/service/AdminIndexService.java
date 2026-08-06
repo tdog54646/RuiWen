@@ -6,9 +6,9 @@ import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import com.tongji.admin.dto.IndexStatsResponse;
 import com.tongji.admin.dto.RebuildStatusResponse;
-import com.tongji.config.EsProperties;
 import com.tongji.knowpost.mapper.KnowPostMapper;
 import com.tongji.llm.rag.index.RagIndexService;
+import com.tongji.llm.rag.index.RagIndexManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,7 +32,7 @@ public class AdminIndexService {
     private final RagIndexService ragIndexService;
     private final KnowPostMapper knowPostMapper;
     private final ElasticsearchClient es;
-    private final EsProperties esProps;
+    private final RagIndexManager ragIndexManager;
 
     private static final String META_VISIBLE = "metadata.visible";
     private static final String META_POSTID = "metadata.postId";
@@ -47,17 +47,19 @@ public class AdminIndexService {
 
     /** 索引统计：切片总数 + 按 visible 分布 + 去重知文数。 */
     public IndexStatsResponse stats() {
-        if (!StringUtils.hasText(esProps.getIndex())) {
+        String index = ragIndexManager.readAlias();
+        if (!StringUtils.hasText(index)) {
             return new IndexStatsResponse(0L, 0L, List.of());
         }
         try {
-            // metadata 下的字符串字段被动态映射为 text（不可直接聚合），用其 .keyword 子字段聚合
-            SearchResponse<Void> resp = es.search(s -> s
-                            .index(esProps.getIndex())
-                            .size(0)
-                            .aggregations("by_visible", a -> a.terms(t -> t.field(META_VISIBLE + ".keyword").size(20)))
-                            .aggregations("distinct_posts", a -> a.cardinality(c -> c.field(META_POSTID + ".keyword"))),
-                    Void.class);
+            SearchResponse<Void> resp;
+            try {
+                // v2 显式 mapping 中字段本身就是 keyword。
+                resp = statsSearch(index, META_VISIBLE, META_POSTID);
+            } catch (Exception currentMappingError) {
+                // 兼容首次迁移前由 Spring AI 动态创建的旧 mapping。
+                resp = statsSearch(index, META_VISIBLE + ".keyword", META_POSTID + ".keyword");
+            }
 
             long totalChunks = resp.hits().total() != null ? resp.hits().total().value() : 0L;
 
@@ -82,6 +84,23 @@ public class AdminIndexService {
             log.error("Index stats failed: {}", e.getMessage(), e);
             return new IndexStatsResponse(0L, 0L, List.of());
         }
+    }
+
+    private SearchResponse<Void> statsSearch(String index, String visibleField, String postIdField) throws Exception {
+        return es.search(s -> s
+                        .index(index)
+                        .size(0)
+                        .aggregations("by_visible", a -> a.terms(t -> t.field(visibleField).size(20)))
+                        .aggregations("distinct_posts", a -> a.cardinality(c -> c.field(postIdField))),
+                Void.class);
+    }
+
+    /** 创建正确中文 mapping、复制现有数据并原子切换稳定别名。 */
+    public RagIndexManager.MigrationResult migrateIndex() {
+        if (rebuildRunning) {
+            throw new IllegalStateException("全量重建进行中，不能同时迁移索引");
+        }
+        return ragIndexManager.migrateToCurrentVersion();
     }
 
     /** 强制重建单篇，返回写入切片数。 */

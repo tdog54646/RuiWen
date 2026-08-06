@@ -3,7 +3,9 @@ package com.tongji.admin.api;
 import com.tongji.admin.dto.IndexStatsResponse;
 import com.tongji.admin.dto.RebuildStatusResponse;
 import com.tongji.admin.service.AdminIndexService;
+import com.tongji.llm.rag.index.RagIndexManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -46,4 +48,12 @@ public class AdminIndexController {
     public RebuildStatusResponse rebuildAllStatus() {
         return adminIndexService.rebuildAllStatus();
     }
+
+    /** 显式迁移到带 IK Analyzer 的版本化索引，并原子切换稳定别名。 */
+    @PostMapping("/rag/migrate")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public RagIndexManager.MigrationResult migrate() {
+        return adminIndexService.migrateIndex();
+    }
+
 }

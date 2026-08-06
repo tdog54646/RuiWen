@@ -4,6 +4,7 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
 import com.tongji.storage.config.OssProperties;
+import com.tongji.llm.rag.index.RagIndexManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RedissonClient;
@@ -38,7 +39,6 @@ import java.util.concurrent.TimeoutException;
 public class StartupEnvironmentReporter implements ApplicationRunner {
 
     private static final long CHECK_TIMEOUT_MS = 5000L;
-    private static final String AI_INDEX = "ruiwen-ai-index";
     private static final String CONTENT_INDEX = "ruiwen_content_index";
 
     private final Environment env;
@@ -48,6 +48,7 @@ public class StartupEnvironmentReporter implements ApplicationRunner {
     private final ElasticsearchClient elasticsearchClient;
     private final EsProperties esProperties;
     private final OssProperties ossProperties;
+    private final RagIndexManager ragIndexManager;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -69,7 +70,8 @@ public class StartupEnvironmentReporter implements ApplicationRunner {
             return "info OK, version=" + ver;
         }));
 
-        results.add(check("ES索引 " + AI_INDEX, () -> indexState(AI_INDEX)));
+        String aiIndex = ragIndexManager.readAlias();
+        results.add(check("ES索引 " + aiIndex, () -> indexState(aiIndex)));
         results.add(check("ES索引 " + CONTENT_INDEX, () -> indexState(CONTENT_INDEX)));
 
         final String kafkaBootstrap = env.getProperty("spring.kafka.bootstrap-servers", "");
@@ -97,7 +99,7 @@ public class StartupEnvironmentReporter implements ApplicationRunner {
             }
         }));
 
-        log.info(buildReport(results));
+        log.info(buildReport(results, aiIndex));
     }
 
     /** 用 GET 判断索引是否存在，避开 ES 9.2.1 的 HEAD bug。 */
@@ -129,7 +131,7 @@ public class StartupEnvironmentReporter implements ApplicationRunner {
         return "TCP " + host + ":" + port + " 可达";
     }
 
-    private String buildReport(List<CheckResult> results) {
+    private String buildReport(List<CheckResult> results, String aiIndex) {
         long ok = results.stream().filter(CheckResult::ok).count();
         StringBuilder sb = new StringBuilder();
         sb.append("\n+==================== 启动依赖自检 ====================+\n");
@@ -154,7 +156,7 @@ public class StartupEnvironmentReporter implements ApplicationRunner {
         sb.append(String.format("| %-12s | uri=%s%n", "Elasticsearch",
                 abbrev(esProperties.getHost() == null ? "" : esProperties.getHost(), 60)));
         appendCheck(sb, results, "Elasticsearch");
-        appendCheck(sb, results, "ES索引 " + AI_INDEX);
+        appendCheck(sb, results, "ES索引 " + aiIndex);
         appendCheck(sb, results, "ES索引 " + CONTENT_INDEX);
 
         sb.append(String.format("| %-12s | bootstrap-servers=%s%n", "Kafka",

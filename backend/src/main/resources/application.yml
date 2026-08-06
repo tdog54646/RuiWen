@@ -84,8 +84,9 @@ spring:
           dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:1536}
     vectorstore:
       elasticsearch:
-        initialize-schema: ${VECTORSTORE_INITIALIZE_SCHEMA:true}
-        index-name: ${VECTORSTORE_INDEX_NAME:ruiwen-ai-index}
+        # RAG 索引由 RagIndexManager 以版本化 mapping 创建；禁止 Spring AI 抢先创建默认 Standard Analyzer 索引。
+        initialize-schema: ${VECTORSTORE_INITIALIZE_SCHEMA:false}
+        index-name: ${VECTORSTORE_INDEX_NAME:ruiwen-ai-read}
         dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:1536} # 一定要和上面的 dimensions 一致，不然会报错
   elasticsearch:
     uris: ${ELASTICSEARCH_URIS:http://localhost:9201}
@@ -211,6 +212,14 @@ code:
 # 对应 RagProperties 中的字段
 # ---------------------------------------------------------------------------
 rag:
+  index:
+    # 线上读写永远访问稳定别名；升级时先构建物理版本索引，再原子切换别名。
+    alias: ${RAG_INDEX_ALIAS:ruiwen-ai-read}
+    legacy-name: ${RAG_INDEX_LEGACY_NAME:ruiwen-ai-index}
+    version: ${RAG_INDEX_VERSION:2}
+    dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:1536}
+    analyzer: ${RAG_INDEX_ANALYZER:ik_max_word}
+    search-analyzer: ${RAG_INDEX_SEARCH_ANALYZER:ik_smart}
   chunk:
     size: 500          # 每个 Chunk 的最大 token 数
     overlap: 50        # 相邻 Chunk 之间的重叠 token 数
@@ -221,18 +230,51 @@ rag:
     mode: rule               # rule=纯规则（推荐），llm=LLM 增强（DeepSeek 调用）
     header-anchoring: true   # 标题与紧随内容合并（rule 模式生效）
   retrieval:
-    top-k: 20          # 每路检索（向量路 / BM25 路）各自召回的 Top 数量
-    min-score: 0.0     # Chunk 最低相似度阈值（低于此值不纳入 RRF 结果）
+    top-k: ${RAG_RETRIEVAL_TOP_K:20}                  # 当前 281 文档实测 20 与 40 的 Recall@20 无收益差异
+    knn-candidates: ${RAG_KNN_CANDIDATES:50}          # 50 与 100 质量完全一致，取更小候选池降低 HNSW 开销
+    min-score: ${RAG_RRF_MIN_SCORE:0.0}               # 这是 RRF 分数，不是 0~1 相似度；默认不做错误阈值过滤
+    title-boost: ${RAG_BM25_TITLE_BOOST:1.0}
+    phrase-boost: ${RAG_BM25_PHRASE_BOOST:0.0}
+    phrase-slop: ${RAG_BM25_PHRASE_SLOP:0}
+    minimum-should-match: ${RAG_BM25_MINIMUM_SHOULD_MATCH:1}
+    query-type: ${RAG_BM25_QUERY_TYPE:best_fields}
+    fuzziness: ${RAG_BM25_FUZZINESS:NONE}
+    diversity-enabled: ${RAG_CONTEXT_DIVERSITY_ENABLED:true}
+    near-duplicate-threshold: ${RAG_NEAR_DUPLICATE_THRESHOLD:0.65}
   rrf:
-    k: 60              # RRF 平滑常数。K 越大各路影响力越均衡。RAGFlow 默认 60。
+    k: ${RAG_RRF_K:20} # v2 SILVER 网格实测与 60 召回相同，Top5 冗余更低
   rerank:
-    enabled: false     # 是否启用 Reranker 精排（默认关闭；接入 BGE-Reranker 等模型时开启）
-    top-k: 20          # RRF 后送入精排的候选数量（精排开销大，通常 10~20）
-    # api-url: http://localhost:8000/rerank   # 精排服务地址（enabled=true 时必填）
-    # api-key: xxxxxx                          # 精排 API Key（可选）
+    enabled: ${RAG_RERANK_ENABLED:false}
+    top-k: ${RAG_RERANK_TOP_K:20}
+    api-url: ${RAG_RERANK_API_URL:https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}
+    model: ${RAG_RERANK_MODEL:gte-rerank-v2}
+    api-key: ${RAG_RERANK_API_KEY:${DASHSCOPE_API_KEY:}}
+    min-score: ${RAG_RERANK_MIN_SCORE:0.0}            # 分数仅在同一次请求内相对可比，先通过评测再校准
+    fail-open: ${RAG_RERANK_FAIL_OPEN:true}           # 精排不可用时保留 RRF 结果，避免问答整体不可用
+    connect-timeout-ms: ${RAG_RERANK_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${RAG_RERANK_READ_TIMEOUT_MS:10000}
   prompt:
-    context-limit: 5   # 最终送入 LLM 的最大 Chunk 数量（控制 Prompt 长度）
+    context-limit: 8   # DEV 网格锁定的最终上下文数量
     empty-answer: "未找到相关信息，请尝试调整问题的表述，或换一种问法。"  # 检索为空时的兜底文案
+  evaluation:
+    parallelism: ${RAG_EVALUATION_PARALLELISM:1}
+    reviewed-only: true
+    candidate-k: 20
+    final-k: 8
+    retrieval-top-k-grid: [20, 40]
+    knn-candidates-grid: [50, 100]
+    final-top-k-grid: [3, 5, 8]
+    rrf-k-grid: [20]
+    title-boost-grid: [1.0]
+    phrase-boost-grid: [0.0]
+    near-duplicate-threshold-grid: [0.35, 0.45, 0.55, 0.65]
+    # 仅供离线 SILVER 相关性标注；与线上 DeepSeek 问答模型完全隔离。
+    judge-api-url: ${RAG_EVALUATION_JUDGE_API_URL:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
+    judge-model: ${RAG_EVALUATION_JUDGE_MODEL:qwen-plus}
+    judge-api-key: ${RAG_EVALUATION_JUDGE_API_KEY:${DASHSCOPE_API_KEY:${OPENAI_API_KEY:}}}
+    judge-timeout-seconds: ${RAG_EVALUATION_JUDGE_TIMEOUT_SECONDS:45}
+    judge-max-tokens: ${RAG_EVALUATION_JUDGE_MAX_TOKENS:4096}
+    judge-fallback-enabled: ${RAG_EVALUATION_JUDGE_FALLBACK_ENABLED:true}
 
 # ---------------------------------------------------------------------------
 # 多轮问答（qa）配置

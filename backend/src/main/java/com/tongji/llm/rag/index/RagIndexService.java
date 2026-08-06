@@ -3,7 +3,6 @@ package com.tongji.llm.rag.index;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
-import com.tongji.config.EsProperties;
 import com.tongji.knowpost.mapper.KnowPostMapper;
 import com.tongji.knowpost.model.KnowPostDetailRow;
 import com.tongji.llm.rag.chunk.SemanticChunker;
@@ -11,7 +10,6 @@ import com.tongji.storage.OssStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -39,11 +37,11 @@ import java.util.*;
 @RequiredArgsConstructor
 public class RagIndexService {
 
-    private final VectorStore vectorStore;
+    private final RagVectorStoreFactory vectorStoreFactory;
+    private final RagIndexManager indexManager;
     private final KnowPostMapper knowPostMapper;
     private final OssStorageService ossStorageService;
     private final ElasticsearchClient es;
-    private final EsProperties esProps;
     private final SemanticChunker semanticChunker;
 
     // 拉取 Markdown 正文内容（每个实例创建一次 RestTemplate，避免重复创建开销）
@@ -70,16 +68,25 @@ public class RagIndexService {
         return reindexSinglePost(postId, true);
     }
 
+    /** 向指定版本索引强制写入，供零停机全量重建使用。 */
+    public int rebuildSinglePost(long postId, String targetIndex) {
+        return reindexSinglePost(postId, true, targetIndex);
+    }
+
     private int reindexSinglePost(long postId, boolean force) {
+        return reindexSinglePost(postId, force, indexManager.readAlias());
+    }
+
+    private int reindexSinglePost(long postId, boolean force, String targetIndex) {
         KnowPostDetailRow row = knowPostMapper.findDetailById(postId);
         if (row == null) {
-            deletePostChunks(postId);
+            deletePostChunks(postId, targetIndex);
             return 0;
         }
 
         // 仅索引已发布知文；不再限制 visible——非公开内容进入个人私有库，检索时按 creatorId 过滤
         if (!"published".equalsIgnoreCase(row.getStatus())) {
-            deletePostChunks(postId);
+            deletePostChunks(postId, targetIndex);
             return 0;
         }
 
@@ -91,7 +98,7 @@ public class RagIndexService {
         // 指纹检测：如未变化则跳过重建
         String currentSha = row.getContentSha256();
         String currentEtag = row.getContentEtag();
-        if (!force && isUpToDate(postId, row)) {
+        if (!force && isUpToDate(postId, row, targetIndex)) {
             log.info("Post {} already indexed with same fingerprint, skip", postId);
             return 0;
         }
@@ -114,7 +121,7 @@ public class RagIndexService {
             throw new IllegalStateException("知文无法生成向量切片: " + postId);
         }
 
-        Set<String> previousDocumentIds = findDocumentIds(postId);
+        Set<String> previousDocumentIds = findDocumentIds(postId, targetIndex);
 
         // 组装 Document（文本 + 业务元数据），用于向量写入与检索过滤
         long nowMs = Instant.now().toEpochMilli();
@@ -142,6 +149,7 @@ public class RagIndexService {
             docs.add(new Document(cid, chunks.get(i), meta));
         }
         // 先以稳定 ID upsert 新切片；只有全部写入成功后才清理旧的随机 ID 或多余尾部切片。
+        var vectorStore = vectorStoreFactory.forIndex(targetIndex);
         vectorStore.add(docs);
         Set<String> currentDocumentIds = new LinkedHashSet<>();
         for (Document doc : docs) currentDocumentIds.add(doc.getId());
@@ -158,14 +166,14 @@ public class RagIndexService {
      * - 以 postId 查询任意一条已索引文档的 metadata
      * - 优先比较 SHA256，其次比较 ETag；一致则视为无需重建
      */
-    private boolean isUpToDate(long postId, KnowPostDetailRow current) {
+    private boolean isUpToDate(long postId, KnowPostDetailRow current, String indexName) {
         try {
-            if (!StringUtils.hasText(esProps.getIndex())) {
+            if (!StringUtils.hasText(indexName)) {
                 // 未配置索引名则无法判断，直接视为需要重建
                 return false;
             }
             SearchResponse<Map> resp = es.search(s -> s
-                            .index(esProps.getIndex())
+                            .index(indexName)
                             .size(1)
                             .query(q -> q.term(t -> t
                                     .field("metadata.postId")
@@ -204,10 +212,14 @@ public class RagIndexService {
      * 删除旧切片：按 metadata.postId 精确删除，确保 upsert 幂等
      */
     public void deletePostChunks(long postId) {
+        deletePostChunks(postId, indexManager.readAlias());
+    }
+
+    private void deletePostChunks(long postId, String indexName) {
         try {
-            requireIndexConfigured();
+            requireIndexConfigured(indexName);
             es.deleteByQuery(d -> d
-                    .index(esProps.getIndex())
+                    .index(indexName)
                     .query(q -> q.term(t -> t
                             .field("metadata.postId")
                             .value(v -> v.stringValue(String.valueOf(postId))))));
@@ -217,11 +229,11 @@ public class RagIndexService {
         }
     }
 
-    private Set<String> findDocumentIds(long postId) {
+    private Set<String> findDocumentIds(long postId, String indexName) {
         try {
-            requireIndexConfigured();
+            requireIndexConfigured(indexName);
             SearchResponse<Map> response = es.search(s -> s
-                            .index(esProps.getIndex())
+                            .index(indexName)
                             .size(10_000)
                             .source(source -> source.fetch(false))
                             .query(q -> q.term(t -> t
@@ -238,8 +250,8 @@ public class RagIndexService {
         }
     }
 
-    private void requireIndexConfigured() {
-        if (!StringUtils.hasText(esProps.getIndex())) {
+    private void requireIndexConfigured(String indexName) {
+        if (!StringUtils.hasText(indexName)) {
             throw new IllegalStateException("RAG Elasticsearch 索引名未配置");
         }
     }
