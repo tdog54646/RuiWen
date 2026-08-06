@@ -105,8 +105,18 @@ public class RrfFusionService {
             List<RetrievalChunk> vectorResults,
             List<RetrievalChunk> bm25Results
     ) {
-        int k = properties.getRrf().getK();
-        double minScore = properties.getRetrieval().getMinScore();
+        return fuseResults(vectorResults, bm25Results,
+                properties.getRrf().getK(), properties.getRetrieval().getMinScore());
+    }
+
+    /** 使用显式参数执行 RRF，供离线网格评测复用生产算法。 */
+    public List<RetrievalChunk> fuseResults(
+            List<RetrievalChunk> vectorResults,
+            List<RetrievalChunk> bm25Results,
+            int k,
+            double minScore
+    ) {
+        if (k < 0) throw new IllegalArgumentException("RRF k 不能小于 0");
 
         // 使用 LinkedHashMap：key = chunkId，value = Accumulator（持有 chunk 引用和累计得分）
         // LinkedHashMap 保证按插入顺序遍历（先向量路，再 BM25 路）

@@ -50,6 +50,9 @@ public class RetrievalChunk {
      */
     private double rrfScore;
 
+    /** Cross-Encoder 精排相关度；未执行精排时为 0。 */
+    private double rerankScore;
+
     public RetrievalChunk() {}
 
     public RetrievalChunk(String chunkId, String postId, String content, String title, int position, double rrfScore) {

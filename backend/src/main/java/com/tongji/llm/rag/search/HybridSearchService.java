@@ -8,6 +8,7 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.tongji.llm.rag.RetrievalContext;
 import com.tongji.llm.rag.embedding.EmbeddingService;
+import com.tongji.llm.rag.index.RagIndexManager;
 import com.tongji.llm.rag.model.RagProperties;
 import com.tongji.llm.rag.model.RetrievalChunk;
 import com.tongji.llm.rag.rerank.RerankerService;
@@ -60,16 +61,13 @@ public class HybridSearchService {
     private final RrfFusionService rrfFusionService;
     private final RerankerService rerankerService;
     private final RagProperties properties;
+    private final RagIndexManager indexManager;
 
     /**
      * ES 索引名，指向 RAG Chunk 向量索引（由 Spring AI VectorStore 初始化或手动创建）。
      * 索引结构参考 resources/es-mapping-rag-chunk.json。
      */
-    private static final String INDEX_NAME = "ruiwen-ai-index";
-
-    /**
-     * ES 向量字段名，与 es-mapping-rag-chunk.json 中 dense_vector 字段名保持一致。
-     */
+    /** ES 向量字段名，与版本化 mapping 中 dense_vector 字段名保持一致。 */
     private static final String VECTOR_FIELD = "embedding";
 
     /**
@@ -110,60 +108,162 @@ public class HybridSearchService {
      * @return 按综合相关性降序排列的 Chunk 列表；若两路均无召回则返回空列表
      */
     public List<RetrievalChunk> hybridSearch(String query, int topK, RetrievalContext ctx) {
+        int finalTopK = Math.min(Math.max(1, topK), properties.getPrompt().getContextLimit());
+        int retrievalTopK = Math.max(finalTopK, properties.getRetrieval().getTopK());
+        RetrievalOptions options = new RetrievalOptions(
+                retrievalTopK,
+                Math.max(retrievalTopK, properties.getRetrieval().getKnnCandidates()),
+                properties.getRrf().getK(),
+                Math.max(finalTopK, properties.getRerank().getTopK()),
+                finalTopK,
+                properties.getRerank().isEnabled(),
+                properties.getRetrieval().getTitleBoost(),
+                properties.getRetrieval().getPhraseBoost(),
+                properties.getRetrieval().isDiversityEnabled(),
+                properties.getRetrieval().getNearDuplicateThreshold());
+        return search(query, ctx, options).chunks();
+    }
+
+    /**
+     * 使用显式参数执行完整检索并返回分阶段轨迹。生产问答与离线评测共用此方法，
+     * 避免评测脚本复制出一套与线上不一致的算法。
+     */
+    public RetrievalSearchResult search(String query, RetrievalContext ctx, RetrievalOptions options) {
         if (!StringUtils.hasText(query)) {
             log.warn("Hybrid search called with empty query");
-            return List.of();
+            RetrievalTrace trace = new RetrievalTrace(
+                    query, indexManager.readAlias(), options,
+                    List.of(), List.of(), List.of(), List.of(), List.of(),
+                    new RetrievalTrace.Latency(0, 0, 0, 0, 0, 0),
+                    false, "empty-query");
+            return new RetrievalSearchResult(List.of(), trace);
         }
 
-        int retrievalTopK = properties.getRetrieval().getTopK();
-        // 用户隔离 filter：两路检索共用，在召回阶段即过滤，RRF/rerank 只对已过滤结果排序
-        Query isolationFilter = buildIsolationFilter(ctx);
-
         // Step 1: 生成查询向量
+        long embeddingStarted = System.nanoTime();
         float[] queryVector = embeddingService.embedQuery(query);
+        long embeddingMs = elapsedMs(embeddingStarted);
+        return searchWithVector(query, ctx, options, queryVector, embeddingMs);
+    }
+
+    /** 离线网格评测复用同一查询向量，避免参数组合重复调用 Embedding API。 */
+    public RetrievalSearchResult searchWithVector(
+            String query,
+            RetrievalContext ctx,
+            RetrievalOptions options,
+            float[] queryVector,
+            long embeddingMs) {
+        if (!StringUtils.hasText(query)) {
+            return search(query, ctx, options);
+        }
+        long retrievalStarted = System.nanoTime();
+        int retrievalTopK = options.retrievalTopK();
+        // 用户隔离 filter：两路检索共用，在召回阶段即过滤，RRF/rerank 只对已过滤结果排序
+        Query isolationFilter = ctx == null
+                ? Query.of(q -> q.matchAll(m -> m))
+                : buildIsolationFilter(ctx);
+
         if (queryVector == null || queryVector.length == 0) {
             log.warn("Embedding returned empty vector for query: {}", query);
-            return List.of();
+            RetrievalTrace trace = new RetrievalTrace(
+                    query, indexManager.readAlias(), options,
+                    List.of(), List.of(), List.of(), List.of(), List.of(),
+                    new RetrievalTrace.Latency(embeddingMs, 0, 0, 0, 0, embeddingMs),
+                    false, "empty-embedding");
+            return new RetrievalSearchResult(List.of(), trace);
         }
 
         // Step 2: 并行执行两路检索（使用 CompletableFuture 以降低延迟）
-        List<RetrievalChunk> vectorResults;
-        List<RetrievalChunk> bm25Results;
+        TimedResults vectorTimed;
+        TimedResults bm25Timed;
         try {
             var vectorFuture = java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> vectorSearch(queryVector, query, retrievalTopK, isolationFilter, ctx));
+                    () -> timed(() -> vectorSearch(queryVector, query, retrievalTopK,
+                            options.knnCandidates(), isolationFilter, ctx)));
             var bm25Future = java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> bm25Search(query, retrievalTopK, isolationFilter, ctx));
+                    () -> timed(() -> bm25Search(query, retrievalTopK, isolationFilter, ctx,
+                            bm25Options(options.titleBoost(), options.phraseBoost()))));
 
             // join 等待两路都完成
             java.util.concurrent.CompletableFuture.allOf(vectorFuture, bm25Future).join();
 
-            vectorResults = vectorFuture.getNow(List.of());
-            bm25Results = bm25Future.getNow(List.of());
+            vectorTimed = vectorFuture.join();
+            bm25Timed = bm25Future.join();
         } catch (Exception e) {
             log.error("Parallel retrieval failed, falling back to sequential: {}", e.getMessage());
-            vectorResults = vectorSearch(queryVector, query, retrievalTopK, isolationFilter, ctx);
-            bm25Results = bm25Search(query, retrievalTopK, isolationFilter, ctx);
+            vectorTimed = timed(() -> vectorSearch(queryVector, query, retrievalTopK,
+                    options.knnCandidates(), isolationFilter, ctx));
+            bm25Timed = timed(() -> bm25Search(query, retrievalTopK, isolationFilter, ctx,
+                    bm25Options(options.titleBoost(), options.phraseBoost())));
         }
+
+        List<RetrievalChunk> vectorResults = vectorTimed.results();
+        List<RetrievalChunk> bm25Results = bm25Timed.results();
+        List<RetrievalTrace.RankedChunk> vectorSnapshot =
+                RetrievalTrace.snapshot(vectorResults, RetrievalTrace.Score.SOURCE);
+        List<RetrievalTrace.RankedChunk> bm25Snapshot =
+                RetrievalTrace.snapshot(bm25Results, RetrievalTrace.Score.SOURCE);
 
         log.debug("Retrieval stats - vector: {}, bm25: {}", vectorResults.size(), bm25Results.size());
 
         // Step 3: RRF 融合
-        List<RetrievalChunk> fused = rrfFusionService.fuseResults(vectorResults, bm25Results);
+        long fusionStarted = System.nanoTime();
+        List<RetrievalChunk> fused = rrfFusionService.fuseResults(
+                vectorResults, bm25Results, options.rrfK(), properties.getRetrieval().getMinScore());
+        long fusionMs = elapsedMs(fusionStarted);
+        List<RetrievalTrace.RankedChunk> fusedSnapshot =
+                RetrievalTrace.snapshot(fused, RetrievalTrace.Score.RRF);
 
         // Step 4: 可选精排（Reranker）
-        if (properties.getRerank().isEnabled() && !fused.isEmpty()) {
-            int rerankTopK = properties.getRerank().getTopK();
-            List<RetrievalChunk> candidates = fused.stream().limit(rerankTopK).toList();
+        List<RetrievalChunk> ranked = fused;
+        List<RetrievalTrace.RankedChunk> rerankedSnapshot = List.of();
+        boolean rerankerApplied = false;
+        String fallbackReason = null;
+        long rerankMs = 0;
+        if (options.rerankEnabled() && !fused.isEmpty()) {
+            List<RetrievalChunk> candidates = fused.stream().limit(options.rerankTopK()).toList();
+            long rerankStarted = System.nanoTime();
             try {
-                fused = rerankerService.rerank(query, candidates);
+                if (!rerankerService.isAvailable()) {
+                    throw new IllegalStateException("Reranker 配置不完整");
+                }
+                ranked = rerankerService.rerank(query, candidates);
+                rerankerApplied = true;
+                rerankedSnapshot = RetrievalTrace.snapshot(ranked, RetrievalTrace.Score.RERANK);
             } catch (Exception e) {
-                log.warn("Reranker call failed, falling back to RRF result: {}", e.getMessage());
+                fallbackReason = e.getMessage();
+                if (!properties.getRerank().isFailOpen()) {
+                    throw new IllegalStateException("Reranker 调用失败且禁止降级", e);
+                }
+                ranked = fused;
+                log.warn("Reranker call failed, falling back to RRF result: {}", fallbackReason);
             }
+            rerankMs = elapsedMs(rerankStarted);
         }
 
         // Step 5: 截取 topK
-        return fused.stream().limit(topK).toList();
+        List<RetrievalChunk> selected = selectFinal(ranked, options);
+        RetrievalTrace.Score selectedScore = rerankerApplied
+                ? RetrievalTrace.Score.RERANK : RetrievalTrace.Score.RRF;
+        RetrievalTrace trace = new RetrievalTrace(
+                query,
+                indexManager.readAlias(),
+                options,
+                vectorSnapshot,
+                bm25Snapshot,
+                fusedSnapshot,
+                rerankedSnapshot,
+                RetrievalTrace.snapshot(selected, selectedScore),
+                new RetrievalTrace.Latency(
+                        embeddingMs,
+                        vectorTimed.elapsedMs(),
+                        bm25Timed.elapsedMs(),
+                        fusionMs,
+                        rerankMs,
+                        embeddingMs + elapsedMs(retrievalStarted)),
+                rerankerApplied,
+                fallbackReason);
+        return new RetrievalSearchResult(selected, trace);
     }
 
     /**
@@ -177,7 +277,8 @@ public class HybridSearchService {
     public List<RetrievalChunk> vectorOnlySearch(String query, int topK) {
         float[] vec = embeddingService.embedQuery(query);
         if (vec == null || vec.length == 0) return List.of();
-        return vectorSearch(vec, query, topK, Query.of(q -> q.matchAll(m -> m)), null);
+        int candidates = Math.max(topK, properties.getRetrieval().getKnnCandidates());
+        return vectorSearch(vec, query, topK, candidates, Query.of(q -> q.matchAll(m -> m)), null);
     }
 
     /**
@@ -188,7 +289,19 @@ public class HybridSearchService {
      * @return 按 BM25 得分降序的 Chunk 列表
      */
     public List<RetrievalChunk> bm25OnlySearch(String query, int topK) {
-        return bm25Search(query, topK, Query.of(q -> q.matchAll(m -> m)), null);
+        return bm25Search(query, topK, Query.of(q -> q.matchAll(m -> m)), null,
+                bm25Options(
+                        properties.getRetrieval().getTitleBoost(),
+                        properties.getRetrieval().getPhraseBoost()));
+    }
+
+    /** 使用显式参数执行 BM25，供离线调优复用生产查询构造。 */
+    public List<RetrievalChunk> bm25OnlySearch(
+            String query, int topK, RetrievalContext ctx, Bm25QueryOptions options) {
+        Query filter = ctx == null
+                ? Query.of(q -> q.matchAll(m -> m))
+                : buildIsolationFilter(ctx);
+        return bm25Search(query, topK, filter, ctx, options);
     }
 
     // -------------------------------------------------------------------------
@@ -209,10 +322,11 @@ public class HybridSearchService {
      * @param topK        召回数量
      * @return 按余弦相似度降序的 Chunk 列表
      */
-    private List<RetrievalChunk> vectorSearch(float[] queryVector, String queryText, int topK,
+    private List<RetrievalChunk> vectorSearch(float[] queryVector, String queryText, int topK, int numCandidates,
                                               Query filter, RetrievalContext ctx) {
         try {
-            SearchRequest request = buildVectorSearchRequest(queryVector, topK, filter);
+            SearchRequest request = buildVectorSearchRequest(queryVector, topK, numCandidates, filter,
+                    indexManager.readAlias());
             SearchResponse<Map<String, Object>> response = es.search(request, getMapTypeRef());
             return parseHits(response.hits().hits(), "vector", ctx);
         } catch (Exception e) {
@@ -226,15 +340,25 @@ public class HybridSearchService {
      * Elasticsearch 会将顶层 query 与 knn 按 OR 合并，导致 query 分支绕过 knn.filter。
      */
     static SearchRequest buildVectorSearchRequest(float[] queryVector, int topK, Query filter) {
+        return buildVectorSearchRequest(queryVector, topK, Math.max(topK * 2, 50), filter,
+                "ruiwen-ai-read");
+    }
+
+    static SearchRequest buildVectorSearchRequest(
+            float[] queryVector,
+            int topK,
+            int numCandidates,
+            Query filter,
+            String indexName) {
         List<Float> queryVectorList = toFloatList(queryVector);
         return SearchRequest.of(s -> s
-                .index(INDEX_NAME)
+                .index(indexName)
                 .size(topK)
                 .knn(knn -> knn
                         .field(VECTOR_FIELD)
                         .queryVector(queryVectorList)
                         .k(topK)
-                        .numCandidates(Math.max(topK * 2, 50))
+                        .numCandidates(Math.max(topK, numCandidates))
                         .filter(filter)));
     }
 
@@ -245,8 +369,7 @@ public class HybridSearchService {
     /**
      * 第二路：BM25 关键词检索。
      * <p>
-     * 在 text 字段（配置 ik_max_word 分词器）上执行 multi_match 查询，
-     * 同时搜索 title（加权 3x）和 text（加权 1x）。
+     * 在 content 与 title 字段上执行 multi_match 查询，并可选增加正文、标题短语匹配。
      * <p>
      * 注：若 ES 索引尚未配置 IK 分词器，此查询退化为标准 standard 分词器，
      * 中文按单字切分，效果会有所下降。建议配合 es-mapping-rag-chunk.json 创建索引。
@@ -255,28 +378,14 @@ public class HybridSearchService {
      * @param topK  召回数量
      * @return 按 BM25 得分降序的 Chunk 列表
      */
-    private List<RetrievalChunk> bm25Search(String query, int topK, Query filter, RetrievalContext ctx) {
+    private List<RetrievalChunk> bm25Search(
+            String query, int topK, Query filter, RetrievalContext ctx,
+            Bm25QueryOptions options) {
         try {
             SearchResponse<Map<String, Object>> response = es.search(s -> s
-                            .index(INDEX_NAME)
+                            .index(indexManager.readAlias())
                             .size(topK)
-                            .query(q -> q
-                                    .bool(b -> b
-                                            // 交叉匹配：查询词在 text 和 title 中同时出现更好
-                                            .should(sh -> sh.multiMatch(mm -> mm
-                                                    .query(query)
-                                                    .fields(TEXT_FIELD, META_FIELD + ".title^3")
-                                                    .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)
-                                            ))
-                                            // 短语匹配：查询词按顺序连续出现（高精度召回）
-                                            .should(sh -> sh.matchPhrase(mp -> mp
-                                                    .field(TEXT_FIELD)
-                                                    .query(query)
-                                                    .boost(2.0f)   // 短语匹配加权
-                                            ))
-                                            .minimumShouldMatch("1") // 至少满足一个 should 条件
-                                            .filter(filter)  // 用户隔离：限制可见域
-                                    )),
+                            .query(buildBm25Query(query, filter, options)),
                     getMapTypeRef());
 
             return parseHits(response.hits().hits(), "bm25", ctx);
@@ -284,6 +393,69 @@ public class HybridSearchService {
             log.error("BM25 search failed: {}", e.getMessage(), e);
             return List.of();
         }
+    }
+
+    static Query buildBm25Query(String query, Query filter, Bm25QueryOptions options) {
+        return Query.of(q -> q.bool(b -> {
+            b.should(sh -> sh.multiMatch(mm -> mm
+                    .query(query)
+                    .fields(TEXT_FIELD, META_FIELD + ".title^" + options.titleBoost())
+                    .type(textQueryType(options.queryType()))
+                    .minimumShouldMatch(options.minimumShouldMatch())
+                    .fuzziness("NONE".equals(options.fuzziness()) ? null : options.fuzziness())));
+            if (options.phraseBoost() > 0) {
+                float contentPhraseBoost = (float) options.phraseBoost();
+                float titlePhraseBoost = (float) (options.phraseBoost()
+                        * Math.max(1.0, options.titleBoost()));
+                b.should(sh -> sh.matchPhrase(mp -> mp
+                        .field(TEXT_FIELD)
+                        .query(query)
+                        .slop(options.phraseSlop())
+                        .boost(contentPhraseBoost)));
+                b.should(sh -> sh.matchPhrase(mp -> mp
+                        .field(META_FIELD + ".title")
+                        .query(query)
+                        .slop(options.phraseSlop())
+                        .boost(titlePhraseBoost)));
+            }
+            return b.minimumShouldMatch("1").filter(filter);
+        }));
+    }
+
+    private Bm25QueryOptions bm25Options(double titleBoost, double phraseBoost) {
+        return new Bm25QueryOptions(
+                titleBoost,
+                phraseBoost,
+                properties.getRetrieval().getPhraseSlop(),
+                properties.getRetrieval().getMinimumShouldMatch(),
+                properties.getRetrieval().getQueryType(),
+                properties.getRetrieval().getFuzziness());
+    }
+
+    private static co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType textQueryType(
+            String value) {
+        return switch (value) {
+            case "most_fields" -> co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.MostFields;
+            case "cross_fields" -> co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.CrossFields;
+            default -> co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields;
+        };
+    }
+
+    private List<RetrievalChunk> selectFinal(
+            List<RetrievalChunk> ranked, RetrievalOptions options) {
+        if (!options.diversityEnabled()) {
+            return ranked.stream().limit(options.finalTopK()).toList();
+        }
+        List<RetrievalChunk> selected = new ArrayList<>(options.finalTopK());
+        for (RetrievalChunk candidate : ranked) {
+            boolean duplicate = selected.stream().anyMatch(existing ->
+                    ContentSimilarity.isNearDuplicate(
+                            existing.getContent(), candidate.getContent(),
+                            options.nearDuplicateThreshold()));
+            if (!duplicate) selected.add(candidate);
+            if (selected.size() == options.finalTopK()) break;
+        }
+        return List.copyOf(selected);
     }
 
     // -------------------------------------------------------------------------
@@ -479,5 +651,17 @@ public class HybridSearchService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static long elapsedMs(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
+
+    private static TimedResults timed(java.util.function.Supplier<List<RetrievalChunk>> supplier) {
+        long started = System.nanoTime();
+        return new TimedResults(supplier.get(), elapsedMs(started));
+    }
+
+    private record TimedResults(List<RetrievalChunk> results, long elapsedMs) {
     }
 }
