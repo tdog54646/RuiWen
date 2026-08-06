@@ -2,3 +2,8 @@ target
 .mvn
 .idea
 *.iml
+
+# Local RAG evaluation/tuning sources are intentionally not shipped.
+src/main/java/com/tongji/llm/rag/eval/
+src/test/java/com/tongji/llm/rag/eval/
+src/test/resources/rag-eval/
